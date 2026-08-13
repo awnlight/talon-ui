@@ -98,6 +98,20 @@ describe('controller', () => {
     expect(exit).toHaveBeenCalledWith(0)
     await controller.dispose()
   })
+  it('two rapid idle+empty Ctrl+D presses request exit exactly once', async () => {
+    // Regression (review round 1): requestExit had no re-entrancy guard, so
+    // two calls to it would each independently run
+    // dispose().then(() => exit(0)), double-invoking exit. Pins the guarded
+    // contract — exit fires exactly once no matter how many idle-exit
+    // presses land — with no await between the two presses.
+    const { ctx, agent, terminal, exit, controller } = setup()
+    await terminal.waitForFrame(0)
+    terminal.input('\x04')
+    terminal.input('\x04')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(exit).toHaveBeenCalledTimes(1)
+    await controller.dispose()
+  })
   it('Esc cancels only while running', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)

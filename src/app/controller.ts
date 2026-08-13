@@ -99,7 +99,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     tui.requestRender()
   }
 
+  let exitRequested = false
   const requestExit = (): void => {
+    if (exitRequested) return
+    exitRequested = true
     if (running) {
       agent.cancel({ kind: 'user' })
       void agent.whenIdle().then(() => { void dispose().then(() => exit(0)) })
