@@ -3,8 +3,8 @@
  * trusting the accumulated buffer). Settled cells stay mounted (spec §5.3). */
 import type { Component } from '@earendil-works/pi-tui'
 import type { ContentBlockLike } from '../../backend/app-events.ts'
-import { displayText, type Palette } from '../../theme/palette.ts'
-import { messageHeader } from './cells.ts'
+import { displayText, type Palette } from '../../theme/palette.js'
+import { messageHeader } from './cells.js'
 
 interface StreamingBlock { block: 'text' | 'reasoning'; text: string }
 
@@ -27,7 +27,7 @@ export class StreamingAssistantCell implements Component {
   invalidate(): void {}
 
   render(_width: number): string[] {
-    const lines: string[] = ['', messageHeader('talon', this.palette.accent, this.palette)]
+    const lines: string[] = [messageHeader('talon', this.palette.accent, this.palette)]
     const parts: { block: string; text: string }[] = this.settled
       ? this.settled.filter((b) => b.type === 'text' || b.type === 'reasoning').map((b) => ({ block: b.type, text: b.text ?? '' }))
       : [...this.blocks.entries()].sort(([a], [b]) => a - b).map(([, v]) => v)
