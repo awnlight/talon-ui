@@ -1,0 +1,18 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @7,0
+0| "You"
+  style 0-2 bold underline
+1| "Rename the button."
+2| <blank>
+3| "talon"
+  style 0-4 fg-13 bold underline
+4| "Looking at the file."
+  style 0-19 dim italic
+5| "Done — renamed."
+6| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+7| <blank>
+8| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+9-17| <blank>
