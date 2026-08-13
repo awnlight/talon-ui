@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "outDir": "lib",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": false,
+    "paths": {
+      "@deepseek-ai/dsh-agent": ["../deepseek-harness/packages/core/agent/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-agent-loop": ["../deepseek-harness/packages/core/agent-loop/src"],
+      "@deepseek-ai/dsh-session": ["../deepseek-harness/packages/core/session/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-tools": ["../deepseek-harness/packages/core/tools/src"],
+      "@deepseek-ai/dsh-system-prompt": ["../deepseek-harness/packages/core/system-prompt/src"],
+      "@deepseek-ai/dsh-commands": ["../deepseek-harness/packages/interaction/commands/src"],
+      "@deepseek-ai/dsh-user-approval": ["../deepseek-harness/packages/interaction/user-approval/src"],
+      "@deepseek-ai/dsh-user-questions": ["../deepseek-harness/packages/interaction/user-questions/src"],
+      "@deepseek-ai/dsh-llm": ["../deepseek-harness/packages/llm/llm/src"],
+      "@deepseek-ai/dsh-token-meter": ["../deepseek-harness/packages/llm/token-meter/src"]
+    }
+  },
+  "include": ["src"]
+}
