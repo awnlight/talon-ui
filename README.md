@@ -1,6 +1,6 @@
 # Talon
 
-Talon is a terminal UI for DeepSeek Harness agents. Install the plugin with `dsh plugin --profile talon add <path>` and run agents with `dsh --profile talon`.
+Talon is a terminal UI for DeepSeek Harness agents. Install the plugin with `dsh plugin --profile talon add <path>` and run agents with `dsh --profile talon`. See [docs/INSTALL.md](docs/INSTALL.md) for the full install walkthrough.
 
 ## Requirements
 
