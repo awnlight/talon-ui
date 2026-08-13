@@ -10,9 +10,9 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": false,
     "paths": {
-      "@deepseek-ai/dsh-agent": ["../deepseek-harness/packages/core/agent/src"],
+      "@deepseek-ai/dsh-agent": ["../deepseek-harness/packages/core/agent/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-agent-loop": ["../deepseek-harness/packages/core/agent-loop/src"],
-      "@deepseek-ai/dsh-session": ["../deepseek-harness/packages/core/session/src"],
+      "@deepseek-ai/dsh-session": ["../deepseek-harness/packages/core/session/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-tools": ["../deepseek-harness/packages/core/tools/src"],
       "@deepseek-ai/dsh-system-prompt": ["../deepseek-harness/packages/core/system-prompt/src"],
       "@deepseek-ai/dsh-commands": ["../deepseek-harness/packages/interaction/commands/src"],
