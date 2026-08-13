@@ -16,7 +16,24 @@
  * dsh-headless (packages/bundle/headless/src/index.ts:96-119, apply at 141-150)
  * and the ACP bridge (packages/acp/acp/src/index.ts:105-108, `const agents =
  * ctx.agents` captured directly in `apply`). This file follows that
- * precedent: `apply` is itself async and calls `agents.create` directly.
+ * precedent for *timing* only: `apply` calls `agents.create` directly rather
+ * than deferring to an event.
+ *
+ * Unlike this file, dsh-headless's own `apply` is void-returning and
+ * manually swallows failure (`void run(...).catch(fail)` at
+ * packages/bundle/headless/src/index.ts:149) because it owns a process exit
+ * code to report through `io.exit`. This file has no such reporting surface,
+ * so `apply` is `async` and lets a rejected `agents.create` propagate
+ * instead of catching it locally. The rejection is not unhandled: Cordis's
+ * own fiber loader awaits every plugin callback and catches there —
+ * `_execute` (vendor/cordis/src/fiber.ts:356-374) invokes the callback and,
+ * when it returns a thenable, chains `.then(safeCollect)` with no catch of
+ * its own; `_reload` (vendor/cordis/src/fiber.ts:646-663) is what actually
+ * awaits that call inside a `try/catch`, and on rejection logs via
+ * `this.ctx.logger.error(reason)` (line 661) and records `this._error`
+ * (line 660), which the fiber's `state` getter (line 576) then reports as
+ * `FiberState.FAILED`. That fiber-level catch is this file's rejection
+ * safety net, not dsh-headless's manual `.catch`.
  */
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
