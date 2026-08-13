@@ -1,4 +1,4 @@
-import type { AppEvent, ContentBlockLike, Notice } from './app-events.ts'
+import type { AppEvent, ContentBlockLike, Notice } from './app-events.js'
 
 interface RawEvent { type: string; data: unknown; time?: number }
 

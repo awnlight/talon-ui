@@ -33,4 +33,22 @@ describe('StreamingAssistantCell', () => {
     cell.update({ index: 0, block: 'text', text: 'x\x1b]0;pwn\x07y' })
     expect(cell.render(80).join('\n')).toContain('x\\x1b]0;pwn\\x07y')
   })
+  it('caches rendered lines by width once settled (I4)', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.update({ index: 0, block: 'text', text: 'partial' })
+    cell.settle([{ type: 'text', text: 'final' }])
+    const a = cell.render(80)
+    expect(cell.render(80)).toBe(a) // same reference: served from cache, not re-rendered
+    const b = cell.render(80)
+    expect(b).toBe(a)
+  })
+  it('does not cache while still live (content changes every chunk)', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.update({ index: 0, block: 'text', text: 'partial' })
+    const a = cell.render(80)
+    cell.update({ index: 0, block: 'text', text: ' more' })
+    const b = cell.render(80)
+    expect(b).not.toBe(a)
+    expect(b.join('\n')).toContain('partial more')
+  })
 })

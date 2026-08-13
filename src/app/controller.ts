@@ -3,7 +3,7 @@
  * same handlers — no side-channel state (spec §2 data flow). */
 import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import { translateSessionEvent } from '../backend/translate.js'
-import type { Palette } from '../theme/palette.ts'
+import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 

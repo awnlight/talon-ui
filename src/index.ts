@@ -16,7 +16,7 @@
 import { ProcessTerminal } from '@earendil-works/pi-tui'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { createController } from './app/controller.js'
-import { createPalette } from './theme/palette.js'
+import { createPalette, displayText } from './theme/palette.js'
 
 /** Minimal structural shape of the Cordis plugin context this file needs. */
 export interface Context {
@@ -51,7 +51,7 @@ export function disposeRootAndExit(ctx: Context, code: number, exit: (code: numb
   void Promise.resolve((ctx as any).root.fiber.dispose()).finally(exitOnce)
 }
 
-function installProcessGuards(ctx: Context): () => void {
+export function installProcessGuards(ctx: Context): () => void {
   const release = async (): Promise<void> => {
     await Promise.race([
       Promise.resolve((ctx as any).root.fiber.dispose()),
@@ -59,7 +59,10 @@ function installProcessGuards(ctx: Context): () => void {
     ])
   }
   const failLoud = (label: string) => (cause: unknown): void => {
-    process.stderr.write(`talon-ui: ${label}: ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}\n`)
+    // D7.8: cause.stack/message is untrusted (a thrown value can carry
+    // arbitrary text, including OSC/CSI) — neutralize before it hits stderr.
+    const detail = cause instanceof Error ? cause.stack ?? cause.message : String(cause)
+    process.stderr.write(`talon-ui: ${label}: ${displayText(detail)}\n`)
     void release().finally(() => process.exit(1))
   }
   const onSignal = (): void => { void release().finally(() => process.exit(0)) }

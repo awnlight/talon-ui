@@ -3,7 +3,7 @@
  * frame suppressed via render() subclass, a dim contextual hint line below
  * (discoverability is a first-class ergonomic requirement, spec D5/§4.3). */
 import { Container, Editor, Text, type TUI } from '@earendil-works/pi-tui'
-import type { Palette } from '../../theme/palette.ts'
+import type { Palette } from '../../theme/palette.js'
 
 export type ComposerState = 'idle' | 'streaming' | 'waiting'
 

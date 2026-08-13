@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createPalette } from '../src/theme/palette.ts'
 import { Transcript } from '../src/ui/transcript/transcript.ts'
+import { UserMessageCell } from '../src/ui/transcript/cells.ts'
 
 const p = createPalette(false)
 const render = (t: Transcript) => t.container.render(80).join('\n')
@@ -40,5 +41,18 @@ describe('Transcript', () => {
     expect(out).not.toContain('msg 0')
     expect(out).toContain('msg 39')
     expect(t.mountedLines(80)).toBeLessThanOrEqual(50 + 3) // cap + marker slack
+  })
+  it('apply() in a tight loop never renders a mounted child (I3 regression guard)', () => {
+    // trim() used to call container.render(200) on every apply() to count
+    // mounted lines — an O(n) full-container render per event. The mount-cap
+    // accounting is now incremental, so apply() should never render any
+    // child at all; only an explicit external render (not exercised here)
+    // should ever invoke a cell's render().
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'seed' })
+    const seed = t.container.children.find((c) => c instanceof UserMessageCell)!
+    const renderSpy = vi.spyOn(seed, 'render')
+    for (let i = 0; i < 1000; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })
+    expect(renderSpy).not.toHaveBeenCalled()
   })
 })

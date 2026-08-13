@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Text, TuiMainScreen } from '@earendil-works/pi-tui'
-import { HeadlessTerminal, renderAfter } from '../src/testing/headless-terminal.ts'
+import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 
 describe('HeadlessTerminal', () => {

@@ -176,11 +176,3 @@ export class HeadlessTerminal implements Terminal {
     return violations
   }
 }
-
-/** Snapshot the frame count, run the mutation, await the NEXT completed frame. */
-export async function renderAfter(tui: { requestRender(force?: boolean): void }, terminal: HeadlessTerminal, action: () => void): Promise<void> {
-  const before = terminal.frames
-  action()
-  tui.requestRender()
-  await terminal.waitForFrame(before)
-}

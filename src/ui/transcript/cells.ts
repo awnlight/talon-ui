@@ -3,7 +3,7 @@
  * Perf law: render(width) serves a width-keyed cache; recompute only via
  * renderLines(); every mutator calls dropLines() (spec §5.1). */
 import type { Component } from '@earendil-works/pi-tui'
-import type { Notice } from '../../backend/app-events.ts'
+import type { Notice } from '../../backend/app-events.js'
 import { displayText, type Palette } from '../../theme/palette.js'
 
 export function messageHeader(label: string, color: (s: string) => string, palette: Palette): string {

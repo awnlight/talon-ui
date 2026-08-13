@@ -14,6 +14,12 @@ describe('performance floors (spec D7.3, D10)', () => {
           t.apply({ kind: 'stream-settle', turn: i, step: 1, content: [{ type: 'text', text: `reply ${i}` }] })
           t.apply({ kind: 'turn-end', turn: i, notice: undefined })
         }
+        // Yield periodically: this ingest loop is synchronous and was
+        // blocking the vitest worker's event loop for the whole run
+        // (~80s), starving its onTaskUpdate heartbeat and failing the
+        // suite (C1). Ceding the loop every ~5k events keeps the worker
+        // responsive; the trim() O(1) fix (I3) is what keeps this fast.
+        if (i % 5000 === 0) await new Promise((r) => setImmediate(r))
       }
       // Steady-state frame: all cells cached; this is the per-keystroke cost shape.
       t.container.render(120) // warm
