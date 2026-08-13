@@ -44,7 +44,19 @@ export interface BootContext {
 }
 
 export const name = 'talon-boot'
-export const inject = ['agents'] as const
+// 'agentLoop' is a real dependency, not just 'agents': AgentRegistry.create
+// throws 'no agent factory registered' until AgentLoop's constructor has run
+// (it calls ctx.agents.setFactory(this) — packages/core/agent-loop/src/
+// index.ts:350). dsh-base mounts 'agent' (the registry) far earlier than
+// 'agent-loop' (near the end of its insert list, gated on AgentLoop's own
+// `static inject = ['agents', 'sessions', 'llm', 'tools', 'systemPrompt']` —
+// index.ts:297), so a plugin injecting only 'agents' can activate and call
+// create() before the factory is registered — confirmed live: `dsh
+// --profile talon` failed with exactly "no agent factory registered (load
+// an agent-loop plugin)" until 'agentLoop' was added here (Task 10 boot
+// smoke). Injecting it forces Cordis to wait for AgentLoop's constructor
+// (and its synchronous setFactory effect) to complete first.
+export const inject = ['agents', 'agentLoop'] as const
 
 export interface Config { sessionId?: string }
 
