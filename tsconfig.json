@@ -15,9 +15,12 @@
       "@deepseek-ai/dsh-session": ["../deepseek-harness/packages/core/session/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-tools": ["../deepseek-harness/packages/core/tools/src"],
       "@deepseek-ai/dsh-system-prompt": ["../deepseek-harness/packages/core/system-prompt/src"],
-      "@deepseek-ai/dsh-commands": ["../deepseek-harness/packages/interaction/commands/src"],
-      "@deepseek-ai/dsh-user-approval": ["../deepseek-harness/packages/interaction/user-approval/src"],
-      "@deepseek-ai/dsh-user-questions": ["../deepseek-harness/packages/interaction/user-questions/src"],
+      "@deepseek-ai/dsh-commands": ["../deepseek-harness/packages/interaction/commands/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-user-approval": ["../deepseek-harness/packages/interaction/user-approval/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-user-questions": ["../deepseek-harness/packages/interaction/user-questions/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-session-query": ["../deepseek-harness/packages/session-query/session-query/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-session-projection": ["../deepseek-harness/packages/session/session-projection/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-session-projection-cache": ["../deepseek-harness/packages/session/session-projection-cache/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-llm": ["../deepseek-harness/packages/llm/llm/src"],
       "@deepseek-ai/dsh-token-meter": ["../deepseek-harness/packages/llm/token-meter/src"]
     }
