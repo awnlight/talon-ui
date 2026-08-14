@@ -84,7 +84,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('talon-ui requires an interactive terminal (stdin and stdout must be TTYs). Use dsh --profile headless for automation.')
   }
-  const sessionId = config.sessionId ?? 'main'
+  // No sessionId configured -> bind the first root agent (talon-boot mints a
+  // fresh UUID per run, so a fixed shared default cannot work). A configured
+  // id binds that exact session only — keep it in sync with talon-boot's.
+  const sessionId = config.sessionId
   const enabled = process.env.NO_COLOR === undefined
   const anyCtx = ctx as any
 
@@ -103,7 +106,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     }, 'talon-ui')
   }
 
-  const matches = (agent: any): boolean => agent.id === sessionId && anyCtx.agents.roots().includes(agent)
+  const matches = (agent: any): boolean =>
+    (sessionId === undefined || agent.id === sessionId) && anyCtx.agents.roots().includes(agent)
   const existing = anyCtx.agents.roots().find(matches)
   if (existing) { start(existing); return }
   const off = anyCtx.on('agent/created', ({ agent }: { agent: any }) => {

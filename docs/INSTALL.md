@@ -10,9 +10,11 @@ Then build talon-ui and install it into a profile:
 
     cd ../talon-ui && pnpm install && pnpm build
     cd ../deepseek-harness
-    pnpm dsh plugin --profile talon add file:../talon-ui
+    pnpm dsh plugin --profile talon add link:../talon-ui
     pnpm dsh --profile talon
 
 `dsh plugin` seeds `$DSH_HOME/profiles/talon` with `@deepseek-ai/dsh-base` and appends `talon-ui` as a bundle layer (it declares `dsh.bundle.patch`). No dsh code changes are involved.
 
 Uninstall: remove `$DSH_HOME/profiles/talon` (`$DSH_HOME` defaults to `~/.dsh` when unset, e.g. `rm -rf ~/.dsh/profiles/talon`).
+
+> 为什么是 `link:` 而不是 `file:`:pnpm 的 `file:` 协议会把包**拷贝**进 profile(安装时快照,之后改代码不生效);`link:` 是真符号链接,`pnpm build` 后立即生效。已装成 file: 的话:`pnpm dsh plugin --profile talon remove talon-ui` 再用 link: 重装。

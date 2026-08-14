@@ -12,3 +12,5 @@
 8. PI_DEBUG_REDRAW 零 full-redraw 快照断言(spec §8 T1/D10④)——计划明确移交 T2(需要面板开合流)。
 9. per-file 100% coverage 配置尚未建立(spec §7)——src/index.ts 曾为 0% 的教训;T2 建 coverage 基线。
 10. spec §4 措辞微调:teal 是 truecolor 层,ANSI accent 回退仍为 95——D6 为准,T3 视觉落地时改表述。
+11. **注入上下文渲染为用户消息**(交互冒烟发现):dsh 以非 user source 的 `user/message` 事件注入系统上下文(skills 目录等),T1 的 translate 未过滤 `source.kind`,整块渲染成 'You' 单元格。T2 做 ContextCard(旧 TUI 先例:非 user source → ContextCardComponent,折叠展示)。
+12. 冒烟基建:scratchpad 的 tty-smoke.py(Python pty 驱动,打字/流式/退出全路径断言)值得搬进 tests/ 作为可选 e2e(需 DEEPSEEK_API_KEY,自跳过)。

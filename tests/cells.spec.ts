@@ -51,3 +51,21 @@ describe('UserMessageCell / NoticeCell', () => {
     expect(cell.render(80).join('\n')).toContain('Turn cancelled.')
   })
 })
+
+describe('width wrapping (TuiMainScreen row-width law)', () => {
+  it('wraps long user-message bodies so no row exceeds the width', async () => {
+    const { visibleWidth } = await import('@earendil-works/pi-tui')
+    const long = 'word '.repeat(120).trim()
+    const cell = new UserMessageCell(long, p)
+    const rows = cell.render(40)
+    expect(rows.length).toBeGreaterThan(2)
+    for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(40)
+  })
+  it('contentLineCount stays width-invariant', () => {
+    const cell = new UserMessageCell('a\nb\nc', p)
+    expect(cell.contentLineCount()).toBe(4)
+    cell.render(10)
+    cell.render(200)
+    expect(cell.contentLineCount()).toBe(4)
+  })
+})

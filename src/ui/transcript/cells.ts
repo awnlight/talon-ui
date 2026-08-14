@@ -2,12 +2,20 @@
  * zero gutter decoration, so drag-select copies exact message text (spec §4.1).
  * Perf law: render(width) serves a width-keyed cache; recompute only via
  * renderLines(); every mutator calls dropLines() (spec §5.1). */
-import type { Component } from '@earendil-works/pi-tui'
+import { wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
 import type { Notice } from '../../backend/app-events.js'
 import { displayText, type Palette } from '../../theme/palette.js'
 
 export function messageHeader(label: string, color: (s: string) => string, palette: Palette): string {
   return palette.bold(palette.underline(color(displayText(label))))
+}
+
+/** Split on newlines, then wrap each logical line to the terminal width.
+ * TuiMainScreen rejects any rendered row wider than the terminal, so every
+ * cell body MUST pass through this before returning from render. */
+export function wrapPlain(text: string, width: number): string[] {
+  const safe = Math.max(1, width)
+  return text.split('\n').flatMap((line) => (line === '' ? [''] : wrapTextWithAnsi(line, safe)))
 }
 
 export abstract class CachedCell implements Component {
@@ -23,15 +31,20 @@ export abstract class CachedCell implements Component {
 
 export class UserMessageCell extends CachedCell {
   constructor(private readonly text: string, private readonly palette: Palette, private readonly label = 'You') { super() }
-  protected renderLines(_width: number): string[] {
-    return [messageHeader(this.label, this.palette.text, this.palette), displayText(this.text)]
+  /** Content-line count (header + unwrapped body lines) for the mount-cap
+   * accounting — wrapping multiplies visual rows but never changes this. */
+  contentLineCount(): number { return 1 + displayText(this.text).split('\n').length }
+  protected renderLines(width: number): string[] {
+    return [messageHeader(this.label, this.palette.text, this.palette), ...wrapPlain(displayText(this.text), width)]
   }
 }
 
 export class NoticeCell extends CachedCell {
   constructor(private readonly notice: Notice, private readonly palette: Palette) { super() }
-  protected renderLines(_width: number): string[] {
+  /** Content-line count for the mount-cap accounting. */
+  contentLineCount(): number { return displayText(this.notice.text).split('\n').length }
+  protected renderLines(width: number): string[] {
     const tone = this.notice.tone === 'error' ? this.palette.error : this.notice.tone === 'warning' ? this.palette.warning : this.palette.dim
-    return [tone(displayText(this.notice.text))]
+    return wrapPlain(displayText(this.notice.text), width).map((row) => tone(row))
   }
 }

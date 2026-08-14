@@ -52,3 +52,14 @@ describe('StreamingAssistantCell', () => {
     expect(b.join('\n')).toContain('partial more')
   })
 })
+
+describe('width wrapping', () => {
+  it('wraps long streamed lines so no row exceeds the width', async () => {
+    const { visibleWidth } = await import('@earendil-works/pi-tui')
+    const cell = new StreamingAssistantCell(p)
+    cell.update({ index: 0, block: 'text', text: 'x'.repeat(500) })
+    for (const row of cell.render(60)) expect(visibleWidth(row)).toBeLessThanOrEqual(60)
+    cell.settle([{ type: 'text', text: 'y'.repeat(500) }])
+    for (const row of cell.render(60)) expect(visibleWidth(row)).toBeLessThanOrEqual(60)
+  })
+})

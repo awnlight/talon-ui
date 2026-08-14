@@ -35,12 +35,14 @@
  * `FiberState.FAILED`. That fiber-level catch is this file's rejection
  * safety net, not dsh-headless's manual `.catch`.
  */
-import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
+import type { AgentRegistry, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
-/** Minimal structural shape of the Cordis plugin context this file needs. */
+/** Minimal structural shape of the Cordis plugin context this file needs.
+ * `get` mirrors cordis Context.get: undefined when a service is absent. */
 export interface BootContext {
   agents: AgentRegistry
+  get(name: string): unknown
 }
 
 export const name = 'talon-boot'
@@ -63,13 +65,64 @@ export interface Config { sessionId?: string }
 /**
  * Create the root agent talon-ui presents, unless one already exists under
  * the configured session id.
- * @param ctx - Cordis context carrying the agent registry (`inject: ['agents']`
- *   guarantees `ctx.agents` is available before this runs).
- * @param config - `sessionId` defaults to `'main'`.
+ * @param ctx - Cordis context carrying the agent registry and agent-loop
+ *   factory (see `inject`).
+ * @param config - `sessionId` defaults to a fresh UUID per boot: dsh
+ *   persists one log per session id, so a fixed default collides with the
+ *   previous run's persisted log ("id collision" turn errors). Set it only
+ *   to pin a specific session deliberately.
  */
-export async function apply(ctx: BootContext, config: Config = {}): Promise<void> {
-  const sessionId = SessionId(config.sessionId ?? 'main')
+/**
+ * Void-returning by necessity, not style: `run()` awaits `loader.await()`,
+ * which resolves only after EVERY entry (including talon-boot itself)
+ * activates — an async `apply` awaiting it would deadlock the boot
+ * (dsh-headless hit the same constraint; its apply detaches `void
+ * run(...).catch(fail)` at packages/bundle/headless/src/index.ts:149).
+ * A boot failure here is fatal and pre-raw-mode, so print and exit(1).
+ */
+export function apply(ctx: BootContext, config: Config = {}): void {
+  void run(ctx, config).catch((cause: unknown) => {
+    const detail = cause instanceof Error ? cause.stack ?? cause.message : String(cause)
+    process.stderr.write(`talon-boot: fatal: ${detail}\n`)
+    process.exit(1)
+  })
+}
+
+async function run(ctx: BootContext, config: Config): Promise<void> {
+  // Let the whole plugin tree settle before creating the agent, so llm
+  // adapters/tools/skills are not half-composed (dsh-headless precedent,
+  // packages/bundle/headless/src/index.ts:99). Absent outside Loader boots.
+  await (ctx.get('loader') as { await(): Promise<void> } | undefined)?.await()
+  const sessionId = SessionId(config.sessionId ?? `session-${crypto.randomUUID()}`)
   const existing = ctx.agents.roots().find(agent => agent.id === sessionId)
   if (existing) return
-  await ctx.agents.create({ sessionId })
+  // Model selection: dsh-base's agent-default-model row supplies the
+  // transport-independent default (settings-overridable). Without it the
+  // request waterfall has no provider/model and every turn errors — fail
+  // loud naming the missing row instead (dsh-headless reads the same
+  // service, packages/bundle/headless/src/index.ts:101-118).
+  const defaultModel = ctx.get('agentDefaultModel') as
+    | { currentSelection(): { provider: string; model: string } }
+    | undefined
+  if (defaultModel === undefined) {
+    throw new Error('talon-boot: missing agentDefaultModel service — compose @deepseek-ai/dsh-agent-default-model (dsh-base provides it)')
+  }
+  const selection = defaultModel.currentSelection()
+  // Dynamic import: this is a runtime value from dsh resolved inside the
+  // dsh process (profile module fallback); a static import would force
+  // vitest to resolve dsh's whole runtime graph just to load the plugin
+  // shape in unit tests.
+  const { installModelSelection } = (await import('@deepseek-ai/dsh-agent')) as unknown as {
+    installModelSelection(agentCtx: unknown, ref: ModelSelectionRef): () => void
+  }
+  await ctx.agents.create({
+    sessionId,
+    meta: { cwd: process.cwd() },
+    agentOptions: { provider: selection.provider, model: selection.model },
+    setup: (agentCtx) => {
+      // Same ref the /model picker will mutate later (spec §3.7).
+      const selected: ModelSelectionRef = { current: selection, assembled: undefined }
+      installModelSelection(agentCtx, selected)
+    },
+  })
 }

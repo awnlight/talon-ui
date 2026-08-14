@@ -10,14 +10,11 @@ import { StreamingAssistantCell } from './streaming.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
 
-// Fixed per-child line contributions for the O(1) mount-cap accounting in
-// trim() below (I3 fix). UserMessageCell/NoticeCell render a constant
-// number of array entries regardless of width or content — neither wraps
-// text (see cells.ts: renderLines ignores its width param and never splits
-// on '\n') — and pi-tui's Spacer(1) always renders exactly one entry. These
-// constants mirror that fixed output shape so trim() never has to render.
-const USER_MESSAGE_LINES = 2 // messageHeader() + displayText(text)
-const NOTICE_LINES = 1 // tone(displayText(text))
+// O(1) mount-cap accounting (I3 fix): the cap is measured in CONTENT lines
+// (logical lines before width-wrapping). Cells report their own count via
+// contentLineCount()/lineCount(); Spacer(1) is always one line. Wrapping
+// multiplies visual rows by a modest factor at render time, so the cap
+// bounds O(total) as D10 intends without trim() ever rendering anything.
 const SPACER_LINES = 1 // Spacer(1)
 
 export class Transcript {
@@ -44,7 +41,7 @@ export class Transcript {
     switch (event.kind) {
       case 'user-message':
         if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
-        this.addChild(new UserMessageCell(event.text, this.palette), USER_MESSAGE_LINES)
+        { const c = new UserMessageCell(event.text, this.palette); this.addChild(c, c.contentLineCount()) }
         break
       case 'stream-delta': {
         const cell = this.cell(`${event.turn}:${event.step}`)
@@ -73,7 +70,7 @@ export class Transcript {
       case 'turn-end':
         if (event.notice) {
           if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
-          this.addChild(new NoticeCell(event.notice, this.palette), NOTICE_LINES)
+          { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
         }
         this.live = undefined
         break
@@ -114,8 +111,7 @@ export class Transcript {
 
   private lineCountOf(c: Component): number {
     if (c instanceof StreamingAssistantCell) return c.lineCount()
-    if (c instanceof UserMessageCell) return USER_MESSAGE_LINES
-    if (c instanceof NoticeCell) return NOTICE_LINES
+    if (c instanceof UserMessageCell || c instanceof NoticeCell) return c.contentLineCount()
     return SPACER_LINES // the only remaining child type trim() ever removes
   }
 }

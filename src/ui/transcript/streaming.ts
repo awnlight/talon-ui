@@ -8,7 +8,7 @@
 import type { Component } from '@earendil-works/pi-tui'
 import type { ContentBlockLike } from '../../backend/app-events.js'
 import { displayText, type Palette } from '../../theme/palette.js'
-import { messageHeader } from './cells.js'
+import { messageHeader, wrapPlain } from './cells.js'
 
 interface StreamingBlock { block: 'text' | 'reasoning'; text: string }
 
@@ -41,7 +41,9 @@ export class StreamingAssistantCell implements Component {
 
   settle(content: ContentBlockLike[]): void {
     this.settled = content
-    this.lines = this.renderLines().length
+    // Content-line recount from the authoritative blocks (width-free: the
+    // mount-cap accounting counts logical lines, not wrapped rows).
+    this.lines = 1 + this.presentedParts().reduce((n, p) => n + p.text.split('\n').length, 0)
   }
   isSettled(): boolean { return this.settled !== undefined }
 
@@ -52,20 +54,23 @@ export class StreamingAssistantCell implements Component {
   invalidate(): void { this.cache = undefined }
 
   render(width: number): string[] {
-    if (!this.settled) return this.renderLines()
-    if (this.cache?.width !== width) this.cache = { width, lines: this.renderLines() }
+    if (!this.settled) return this.renderLines(width)
+    if (this.cache?.width !== width) this.cache = { width, lines: this.renderLines(width) }
     return this.cache.lines
   }
 
-  private renderLines(): string[] {
-    const lines: string[] = [messageHeader('talon', this.palette.accent, this.palette)]
-    const parts: { block: string; text: string }[] = this.settled
+  private presentedParts(): { block: string; text: string }[] {
+    return this.settled
       ? this.settled.filter((b) => b.type === 'text' || b.type === 'reasoning').map((b) => ({ block: b.type, text: b.text ?? '' }))
       : [...this.blocks.entries()].sort(([a], [b]) => a - b).map(([, v]) => v)
-    for (const part of parts) {
-      const body = displayText(part.text)
-      if (part.block === 'reasoning') lines.push(...body.split('\n').map((l) => this.palette.dim(this.palette.italic(l))))
-      else lines.push(...body.split('\n'))
+  }
+
+  private renderLines(width: number): string[] {
+    const lines: string[] = [messageHeader('talon', this.palette.accent, this.palette)]
+    for (const part of this.presentedParts()) {
+      const rows = wrapPlain(displayText(part.text), width)
+      if (part.block === 'reasoning') lines.push(...rows.map((l) => this.palette.dim(this.palette.italic(l))))
+      else lines.push(...rows)
     }
     return lines
   }
