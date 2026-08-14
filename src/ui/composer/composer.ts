@@ -7,18 +7,16 @@ import type { Palette } from '../../theme/palette.js'
 
 export type ComposerState = 'idle' | 'streaming' | 'waiting'
 
+/** Marks upstream border rows for removal. Border rows are the ONLY output
+ * borderColor touches (verified pi-tui 0.84.1 editor.js:382,410,461), and
+ * content rows cannot start with \x00 (Editor inserts only charCode >= 32),
+ * so filtering by leading sentinel strips exactly the frame — with or
+ * without autocomplete rows appended after the bottom border. */
+const BORDER_SENTINEL = '\x00'
+
 class FramelessEditor extends Editor {
   render(width: number): string[] {
-    const rows = super.render(width)
-    // Empirically verified against pi-tui 0.84.1 (task-7-report.md): Editor
-    // unconditionally frames its content with exactly one top border row and
-    // one bottom border row — present regardless of focus or scroll state
-    // (only the hardware-cursor marker depends on focus). Drop both; our
-    // composer renders its own state rule instead. Content rows are
-    // untouched so wrap math stays upstream's.
-    /* v8 ignore next 2 -- defensive: upstream Editor always frames content with 2 border rows (verified 0.84.1); rewritten by T2 Task 4 */
-    if (rows.length >= 2) return rows.slice(1, -1)
-    return rows
+    return super.render(width).filter((row) => !row.startsWith(BORDER_SENTINEL))
   }
 }
 
@@ -31,7 +29,7 @@ export class Composer {
 
   constructor(tui: TUI, private readonly palette: Palette) {
     this.editor = new FramelessEditor(tui, {
-      borderColor: (s) => s, // border rows are dropped; color is irrelevant
+      borderColor: (s) => BORDER_SENTINEL + s, // marks border rows for FramelessEditor.render() to filter
       /* v8 ignore next 7 -- the built-in select-list overlay never renders: composer.ts never calls editor.setAutocompleteProvider, so pi-tui's requestAutocomplete() returns before ever invoking these formatters (verified against pi-tui 0.84.1's Editor.requestAutocomplete). Wired up once a future task adds slash-command/autocomplete support. */
       selectList: {
         selectedPrefix: (s) => palette.accent(s),

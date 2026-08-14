@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Editor, TuiMainScreen } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
@@ -94,5 +94,30 @@ describe('Composer', () => {
     expect(framedRows[framedRows.length - 1]).toBe('─'.repeat(60))
     expect(framedRows.length).toBe(borderlessRows.length + 2)
     expect(borderlessRows).toEqual(framedRows.slice(1, -1))
+  })
+  it('keeps autocomplete rows and drops exactly the two border rows (T2 carryover 1)', async () => {
+    const term = new HeadlessTerminal(60, 20)
+    const tui = new TuiMainScreen(term)
+    const palette = createPalette(false)
+    const composer = new Composer(tui, palette)
+    composer.editor.setAutocompleteProvider({
+      async getSuggestions(lines: string[], cursorLine: number, cursorCol: number) {
+        const before = (lines[cursorLine] ?? '').slice(0, cursorCol)
+        if (!before.startsWith('/')) return null
+        return { items: [{ value: 'help', label: 'help', description: 'list commands' }, { value: 'status', label: 'status' }], prefix: before }
+      },
+      applyCompletion: (lines: string[], cursorLine: number, cursorCol: number) => ({ lines, cursorLine, cursorCol }),
+    })
+    tui.setFocus(composer.editor)
+    tui.start()
+    term.input('/')
+    await vi.waitFor(() => expect(composer.editor.isShowingAutocomplete()).toBe(true))
+    const rows = composer.editor.render(58)
+    const text = rows.join('\n')
+    expect(text).toContain('help')                    // completion rows survive
+    expect(text).toContain('status')
+    expect(rows.some((r) => /─{10,}/.test(r))).toBe(false) // no border row leaked into the middle
+    expect(text).not.toContain('\x00')                // sentinel never escapes
+    tui.stop()
   })
 })
