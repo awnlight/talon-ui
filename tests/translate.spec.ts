@@ -65,6 +65,20 @@ describe('translateSessionEvent', () => {
     expect(translateSessionEvent({ type: 'tool/call', data: {} }))
       .toEqual([{ kind: 'tool-call', callId: '', name: '', preview: undefined }])
   })
+  it('tool/call parses a JSON-string arguments payload for the command preview (real dsh wire shape)', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c3', name: 'bash', arguments: '{"command":"ls -la"}' } }))
+      .toEqual([{ kind: 'tool-call', callId: 'c3', name: 'bash', preview: 'ls -la' }])
+  })
+  it('tool/call with malformed JSON-string arguments yields an undefined preview without throwing', () => {
+    const malformed = { type: 'tool/call', data: { callId: 'c4', name: 'bash', arguments: '{"command": <bad' } }
+    expect(() => translateSessionEvent(malformed)).not.toThrow()
+    expect(translateSessionEvent(malformed))
+      .toEqual([{ kind: 'tool-call', callId: 'c4', name: 'bash', preview: undefined }])
+  })
+  it('tool/call still accepts object-shaped arguments fixtures (pre-existing behavior preserved)', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c5', name: 'bash', arguments: { command: 'pwd' } } }))
+      .toEqual([{ kind: 'tool-call', callId: 'c5', name: 'bash', preview: 'pwd' }])
+  })
   it('translates the approval audit pair', () => {
     expect(translateSessionEvent({ type: 'approval/asked', data: { id: 'a1', toolName: 'bash', callId: 'c1' } }))
       .toEqual([{ kind: 'approval-asked', id: 'a1', toolName: 'bash' }])
