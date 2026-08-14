@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
+import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const CHECKPOINTS = ['conversation-roundtrip'] as const
+const OWNED = ['conversation-roundtrip'] as const
+afterAll(() => expectObserved(OWNED))
 
 describe('talon snapshots', () => {
   it('conversation-roundtrip', async () => {
@@ -25,9 +27,7 @@ describe('talon snapshots', () => {
     ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'reasoning', text: 'Looking at the file.' }, { type: 'text', text: 'Done — renamed.' }] } } })
     ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
     await terminal.waitForFrame(before)
-    const snap = terminal.snapshot()
-    expect(terminal.themeViolations()).toEqual([])
-    await expect(snap).toMatchFileSnapshot(`snapshots/${CHECKPOINTS[0]}.expected.txt`)
+    await checkpoint('conversation-roundtrip', terminal)
     await controller.dispose()
   })
 })
