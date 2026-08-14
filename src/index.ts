@@ -91,6 +91,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const enabled = process.env.NO_COLOR === undefined
   const anyCtx = ctx as any
 
+  /* v8 ignore start -- live TTY mount: ProcessTerminal + Cordis effect wiring cannot run off-TTY; exercised end-to-end by tests/e2e/tty-smoke (real PTY boot, T2 Task 20) */
   const start = (agent: any): void => {
     anyCtx.effect(() => {
       const terminal = new ProcessTerminal()
@@ -105,6 +106,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return () => { removeGuards(); return controller.dispose() }
     }, 'talon-ui')
   }
+  /* v8 ignore stop */
 
   const matches = (agent: any): boolean =>
     (sessionId === undefined || agent.id === sessionId) && anyCtx.agents.roots().includes(agent)

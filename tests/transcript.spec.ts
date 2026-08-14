@@ -42,6 +42,22 @@ describe('Transcript', () => {
     expect(out).toContain('msg 39')
     expect(t.mountedLines(80)).toBeLessThanOrEqual(50 + 3) // cap + marker slack
   })
+  it('turn-end notice after prior content adds a spacer before the notice', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'question' })
+    t.apply({ kind: 'turn-end', turn: 1, notice: { text: 'Turn cancelled.', tone: 'warning' } })
+    const out = render(t)
+    expect(out).toContain('question')
+    expect(out).toContain('Turn cancelled.')
+  })
+  it('stream-delta for a different key than the current live cell opens a new cell', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'first' })
+    t.apply({ kind: 'stream-delta', turn: 2, step: 1, index: 0, block: 'text', text: 'second' })
+    const out = render(t)
+    expect(out).toContain('first')
+    expect(out).toContain('second')
+  })
   it('apply() in a tight loop never renders a mounted child (I3 regression guard)', () => {
     // trim() used to call container.render(200) on every apply() to count
     // mounted lines — an O(n) full-container render per event. The mount-cap

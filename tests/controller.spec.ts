@@ -132,4 +132,40 @@ describe('controller', () => {
     expect(snap).toContain('stopped=1')
     expect([...ctx.listeners.values()].flat().length).toBe(0)
   })
+  it('ignores agent/status events for a different agent', async () => {
+    const { ctx, agent, terminal, exit, controller } = setup()
+    await terminal.waitForFrame(0)
+    // If this leaked through, `running` would flip true and the following
+    // Ctrl+C would cancel instead of requesting exit (mirrors the
+    // 'ignores events from other sessions' session/event test above).
+    ctx.emit('agent/status', { agent: { ...agent, id: 'other' }, status: 'running' })
+    terminal.input('\x03')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(agent.cancelled.length).toBe(0)
+    expect(exit).toHaveBeenCalledWith(0)
+    await controller.dispose()
+  })
+  it('Ctrl+C with idle non-empty composer clears the text instead of exiting', async () => {
+    const { terminal, exit, controller } = setup()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    terminal.input('draft')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('draft')
+    before = terminal.frames
+    terminal.input('\x03')
+    await terminal.waitForFrame(before)
+    expect(exit).not.toHaveBeenCalled()
+    expect(terminal.snapshot()).not.toContain('draft')
+    await controller.dispose()
+  })
+  it('Ctrl+L forces a full render', async () => {
+    const { terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    terminal.input('\x0c')
+    await terminal.waitForFrame(before)
+    expect(terminal.frames).toBeGreaterThan(before)
+    await controller.dispose()
+  })
 })

@@ -98,6 +98,7 @@ export class Transcript {
   private trim(): void {
     while (this.container.children.length > 2 && this.mountedLineCount > this.cap) {
       const first = this.container.children.find((c) => c !== this.marker)
+      /* v8 ignore next -- defensive: unreachable given the while-guard above. `this.marker` is at most one instance, so children.length > 2 always leaves at least one non-marker child for find() to return. */
       if (!first) break
       this.container.removeChild(first)
       this.mountedLineCount -= this.lineCountOf(first)

@@ -103,6 +103,7 @@ export class HeadlessTerminal implements Terminal {
     }
     for (let y = 0; y < buf.length; y++) {
       const line = buf.getLine(y)
+      /* v8 ignore next -- defensive: @xterm/headless's real getLine(y) never returns undefined for y in [0, buf.length), only for out-of-range indices this loop never produces */
       if (!line) continue
       // translateToString(true) only trims cells with no character data; pi-tui
       // pads rows with literal space characters (real cells), so those survive
@@ -141,6 +142,7 @@ export class HeadlessTerminal implements Terminal {
   private styleRuns(y: number): string[] {
     const buf = this.emulator.buffer.active
     const line = buf.getLine(y)
+    /* v8 ignore next -- defensive: styleRuns is only ever called by snapshot() for a y it already confirmed has a line; see the twin guard above */
     if (!line) return []
     const runs: string[] = []
     let runStart = -1
@@ -162,9 +164,11 @@ export class HeadlessTerminal implements Terminal {
     const violations: string[] = []
     for (let y = 0; y < buf.length; y++) {
       const line = buf.getLine(y)
+      /* v8 ignore next -- defensive: same xterm buffer contract as snapshot()'s guard above (real getLine(y) never returns undefined for in-range y) */
       if (!line) continue
       for (let x = 0; x < line.length; x++) {
         const cell = line.getCell(x)
+        /* v8 ignore next -- defensive: getCell(x) never returns undefined for x in [0, line.length) on a real xterm buffer line */
         if (!cell) continue
         if (cell.isFgRGB()) violations.push(`${y}:${x} rgb-fg`)
         if (cell.isBgRGB()) violations.push(`${y}:${x} rgb-bg`)

@@ -50,6 +50,12 @@ describe('UserMessageCell / NoticeCell', () => {
     const cell = new NoticeCell({ text: 'Turn cancelled.', tone: 'warning' }, p)
     expect(cell.render(80).join('\n')).toContain('Turn cancelled.')
   })
+  it('each notice tone picks its own color role', () => {
+    const colored = createPalette(true)
+    expect(new NoticeCell({ text: 'x', tone: 'info' }, colored).render(80)[0]).toBe(colored.dim('x'))
+    expect(new NoticeCell({ text: 'x', tone: 'warning' }, colored).render(80)[0]).toBe(colored.warning('x'))
+    expect(new NoticeCell({ text: 'x', tone: 'error' }, colored).render(80)[0]).toBe(colored.error('x'))
+  })
 })
 
 describe('width wrapping (TuiMainScreen row-width law)', () => {
@@ -67,5 +73,13 @@ describe('width wrapping (TuiMainScreen row-width law)', () => {
     cell.render(10)
     cell.render(200)
     expect(cell.contentLineCount()).toBe(4)
+  })
+  it('renders at width 1 without throwing (extreme narrow wrap)', () => {
+    const cell = new UserMessageCell('hi', p)
+    expect(() => cell.render(1)).not.toThrow()
+  })
+  it('an embedded blank logical line renders as an empty row', () => {
+    const cell = new UserMessageCell('hello\n\nworld', p)
+    expect(cell.render(80)).toContain('')
   })
 })

@@ -16,6 +16,7 @@ class FramelessEditor extends Editor {
     // (only the hardware-cursor marker depends on focus). Drop both; our
     // composer renders its own state rule instead. Content rows are
     // untouched so wrap math stays upstream's.
+    /* v8 ignore next 2 -- defensive: upstream Editor always frames content with 2 border rows (verified 0.84.1); rewritten by T2 Task 4 */
     if (rows.length >= 2) return rows.slice(1, -1)
     return rows
   }
@@ -31,6 +32,7 @@ export class Composer {
   constructor(tui: TUI, private readonly palette: Palette) {
     this.editor = new FramelessEditor(tui, {
       borderColor: (s) => s, // border rows are dropped; color is irrelevant
+      /* v8 ignore next 7 -- the built-in select-list overlay never renders: composer.ts never calls editor.setAutocompleteProvider, so pi-tui's requestAutocomplete() returns before ever invoking these formatters (verified against pi-tui 0.84.1's Editor.requestAutocomplete). Wired up once a future task adds slash-command/autocomplete support. */
       selectList: {
         selectedPrefix: (s) => palette.accent(s),
         selectedText: (s) => palette.selected(s),

@@ -48,6 +48,22 @@ describe('Composer', () => {
     // accent = ANSI 95 → xterm palette index 13 (bright magenta)
     expect(term.snapshot()).toMatch(/style 0-\d+ fg-13/)
   })
+  it('waiting state recolors the rule with the warning tone', async () => {
+    const { term, tui, composer } = setup()
+    tui.start()
+    await term.waitForFrame(0)
+    const before = term.frames
+    composer.setState('waiting')
+    tui.requestRender()
+    await term.waitForFrame(before)
+    tui.stop()
+    // warning = ANSI 33 → xterm palette index 3 (yellow)
+    expect(term.snapshot()).toMatch(/style 0-\d+ fg-3\b/)
+  })
+  it('container.invalidate() cascades to the rule component without throwing', () => {
+    const { composer } = setup()
+    expect(() => composer.container.invalidate()).not.toThrow()
+  })
   // Pins the upstream frame shape FramelessEditor depends on. Verified
   // empirically against pi-tui 0.84.1 (see task-7-report.md): Editor.render()
   // always emits exactly one top border row, N>=1 content rows, and exactly

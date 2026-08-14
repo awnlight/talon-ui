@@ -90,6 +90,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   }))
 
   composer.onSubmit = (text) => {
+    /* v8 ignore next -- defensive: dispose() tears down the terminal's input pipeline synchronously (tui.stop() -> terminal.stop()), so no keystroke can reach onSubmit once disposed is true; nothing outside this closure can invoke onSubmit directly to race it either */
     if (disposed) return
     const message = toUserMessage(text)
     if (running) agent.steer(message)
@@ -101,8 +102,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
 
   let exitRequested = false
   const requestExit = (): void => {
+    /* v8 ignore next -- defensive: exitRequested is always false on first entry. Both call sites below only invoke requestExit() once disposal hasn't happened yet, and dispose() (triggered synchronously by the else branch, the only branch ever taken today) tears down every input listener before a second call could ever land — so this re-entrancy guard has nothing to exercise. Kept for a future caller that might invoke requestExit() twice in the same tick. */
     if (exitRequested) return
     exitRequested = true
+    /* v8 ignore next 4 -- defensive: no current caller reaches requestExit() while running. Both call sites below guard on `!running` (Ctrl+C cancels-and-returns without calling requestExit while running; Ctrl+D is a no-op while running), so this branch has nothing to exercise today. Kept for a future caller (e.g. a /quit command) that requests exit mid-turn. */
     if (running) {
       agent.cancel({ kind: 'user' })
       void agent.whenIdle().then(() => { void dispose().then(() => exit(0)) })
@@ -112,6 +115,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   }
 
   detachers.push(tui.addInputListener((data) => {
+    /* v8 ignore next -- hasPanel() is hardcoded false until T2 replaces it with PanelManager.activePanel !== undefined; this branch has no way to go true yet */
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
     if (matchesKey(data, 'ctrl+c')) {
       if (running) { agent.cancel({ kind: 'user' }); return { consume: true } }
