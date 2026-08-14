@@ -25,11 +25,28 @@ interface Entry<T> {
  * queue continues (spec §4.4 guarded law). Focus flag forwards so an inner
  * Input still shows its cursor. */
 class GuardedPanel implements Component {
+  // True for the duration of render() (including a crash's synchronous
+  // onCrash callback) — lets settleAndAdvance tell a render-time settle
+  // (must defer its removeChild; see there) apart from a handleInput-time
+  // settle (must not).
+  rendering = false
   constructor(private readonly inner: Component, private readonly onCrash: (error: unknown) => void) {}
   get focused(): boolean { return (this.inner as { focused?: boolean }).focused ?? false }
   set focused(value: boolean) { const i = this.inner as { focused?: boolean }; if ('focused' in i) i.focused = value }
   render(width: number): string[] {
-    try { return this.inner.render(width) } catch (error) { this.onCrash(error); return [] }
+    this.rendering = true
+    try {
+      const lines = this.inner.render(width)
+      this.rendering = false
+      return lines
+    } catch (error) {
+      // rendering stays true through onCrash(): settleAndAdvance (reached
+      // synchronously from here) reads it to decide whether this settle is
+      // happening mid-render — see settleAndAdvance's comment.
+      this.onCrash(error)
+      this.rendering = false
+      return []
+    }
   }
   handleInput(data: string): void {
     try { this.inner.handleInput?.(data) } catch (error) { this.onCrash(error) }
@@ -109,18 +126,38 @@ export class PanelManager {
     settle()
     if (this.current?.entry === entry) {
       const finished = this.current.guarded
+      const settledDuringRender = finished.rendering
       this.current = undefined
       if (this.queue.length > 0) {
-        // Defer: `finished` may still be mid-render right now (a crashing
-        // panel's render() is what reached this settle in the first place).
-        // Container.render() iterates `children` with a live array
-        // iterator, so a same-tick remove+add here would splice `finished`
-        // out from under that iterator's cursor and the newly-added next
-        // panel would silently never be visited in THIS render pass.
-        // Removing on a microtask (after the current render call has
-        // returned) sidesteps that without delaying activation of the next
-        // panel, which still mounts synchronously below.
-        queueMicrotask(() => this.container.removeChild(finished))
+        if (settledDuringRender) {
+          // `finished` is mid-render right now (a crashing panel's render()
+          // is what reached this settle). Container.render() iterates
+          // `children` with a live array iterator, so a same-tick
+          // remove+add here would splice `finished` out from under that
+          // iterator's cursor and the newly-added next panel would
+          // silently never be visited in THIS render pass. Deferring the
+          // removal to a microtask sidesteps that without delaying
+          // activation of the next panel, which still mounts synchronously
+          // below — but Node drains process.nextTick (what pi-tui's own
+          // requestRender schedules a repaint through) BEFORE microtasks,
+          // so the repaint already in flight from THIS render pass's own
+          // requestRender (below, and the crash path's self-heal) can run
+          // before the deferred removeChild does, painting both panels
+          // stacked for one frame. Requesting another render after the
+          // deferred removal closes that gap.
+          queueMicrotask(() => {
+            this.container.removeChild(finished)
+            this.host.requestRender()
+          })
+        } else {
+          // Not mid-render (e.g. a normal handleInput finish) — no
+          // iterator to race, so remove immediately. Deferring here would
+          // itself be the bug: pi-tui schedules its repaint via
+          // process.nextTick, which runs BEFORE a queued microtask, so a
+          // deferred removal would paint both panels stacked for one frame
+          // with nothing left to request a follow-up repaint.
+          this.container.removeChild(finished)
+        }
         this.activateNext()
         return
       }

@@ -91,6 +91,32 @@ describe('PanelManager', () => {
     expect(line).toBe('─ approval ' + '─'.repeat(19))
   })
 
+  // Review round 1 regression pin: the FIFO test above only ever checks
+  // `pm.container.render(...)` after an `await` (which flushes microtasks),
+  // so it could not see this. A normal (non-crash) handleInput finish must
+  // remove the old panel SYNCHRONOUSLY — deferring it (as an earlier
+  // version of settleAndAdvance did, unconditionally, for any advance to a
+  // next panel) leaves a stale duplicate frame in production: pi-tui
+  // repaints after keyboard input via process.nextTick, which Node drains
+  // BEFORE microtasks, so a real terminal would paint BOTH panels stacked
+  // for one frame with nothing left to schedule a follow-up repaint (the
+  // crash path self-heals only because its own requestRender fires
+  // mid-render, queuing a follow-up; a handleInput-time finish has no such
+  // in-flight render to piggyback on).
+  it('finishing via handleInput with a queued panel removes the old one synchronously (no stale duplicate frame)', () => {
+    const h = host()
+    const pm = new PanelManager(h.api)
+    pm.enqueue({ create: textPanel('a'), forced: () => ({ outcome: 'forced-a' }) })
+    pm.enqueue({ create: textPanel('b'), forced: () => ({ outcome: 'forced-b' }) })
+    pm.active!.handleInput!('x') // finishes 'a'; no await anywhere in this test
+    const rendered = pm.container.render(20)
+
+    const reference = host()
+    const pmB = new PanelManager(reference.api)
+    pmB.enqueue({ create: textPanel('b'), forced: () => ({ outcome: 'forced-b' }) })
+    expect(rendered).toEqual(pmB.container.render(20)) // exactly the single next panel, nothing stacked on top
+  })
+
   // The tests below go beyond the brief's pinned Step-1 list to close out
   // per-file 100% coverage (vitest.config.ts): GuardedPanel's focused
   // forwarding, handleInput's missing-method and crash paths, invalidate's
