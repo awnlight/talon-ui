@@ -5,9 +5,16 @@ import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
+import { PanelManager } from '../ui/panels/panel-manager.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
 export interface ControllerDeps {
+  /** The plugin's ROOT ctx — NOT a per-agent scope (root-ctx flip, T2 Task
+   * 5). dsh's event dispatch is scope-filtered per agent, so a listener
+   * bound to `agent.ctx` goes deaf across Task 16's in-process rebind;
+   * binding the root here keeps listening. The per-event identity checks
+   * below (`session !== bound.session`, `payload.agent !== bound`) are the
+   * ONLY filter keeping other agents' events out — required for D8. */
   ctx: { on(event: string, fn: (...args: any[]) => void): () => void }
   agent: {
     id: string
@@ -58,33 +65,49 @@ function toUserMessage(text: string) {
   }
 }
 
-export function createController(deps: ControllerDeps): { dispose(): Promise<void> } {
+export function createController(deps: ControllerDeps): { dispose(): Promise<void>; panels: PanelManager } {
   const { ctx, agent, terminal, palette, exit } = deps
   const tui = new TuiMainScreen(terminal)
   tui.setClearOnShrink(false) // spec D10: shrink clears via normal diff, never a scrollback-wiping full redraw
   const transcript = new Transcript(palette)
   const composer = new Composer(tui, palette)
   composer.setHint(HINT_IDLE)
-  tui.addChild(transcript.container)
-  tui.addChild(composer.container)
-  tui.setFocus(composer.editor)
 
   let disposed = false
   let running = agent.status === 'running'
-  const hasPanel = (): boolean => false // T2 replaces with PanelManager.activePanel !== undefined
+  // Identity target for the two per-event filters below. Always `agent`
+  // today; Task 16's in-process rebind reassigns this in place so the
+  // listeners registered against the root ctx (see ControllerDeps.ctx) keep
+  // matching the live agent instead of going deaf.
+  let bound = agent
+  const panels = new PanelManager({
+    setFocus: (c) => tui.setFocus(c),
+    focusHome: () => composer.editor,
+    requestRender: () => tui.requestRender(),
+    onActiveChange: (active) => {
+      composer.setState(active ? 'waiting' : running ? 'streaming' : 'idle')
+      tui.requestRender()
+    },
+  })
+  const hasPanel = (): boolean => panels.active !== undefined
+
+  tui.addChild(transcript.container)
+  tui.addChild(panels.container)
+  tui.addChild(composer.container)
+  tui.setFocus(composer.editor)
 
   const detachers: (() => void)[] = []
 
   detachers.push(ctx.on('session/event', (session: unknown, event: { type: string; data: unknown; time?: number }) => {
-    if (session !== agent.session || disposed) return
+    if (session !== bound.session || disposed) return
     for (const appEvent of translateSessionEvent(event)) transcript.apply(appEvent)
     tui.requestRender()
   }))
 
   detachers.push(ctx.on('agent/status', (payload: { agent: unknown; status: 'idle' | 'running' }) => {
-    if (payload.agent !== agent || disposed) return
+    if (payload.agent !== bound || disposed) return
     running = payload.status === 'running'
-    composer.setState(running ? 'streaming' : 'idle')
+    composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
     composer.setHint(running ? HINT_RUNNING : HINT_IDLE)
     tui.requestRender()
   }))
@@ -115,7 +138,6 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   }
 
   detachers.push(tui.addInputListener((data) => {
-    /* v8 ignore next -- hasPanel() is hardcoded false until T2 replaces it with PanelManager.activePanel !== undefined; this branch has no way to go true yet */
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
     if (matchesKey(data, 'ctrl+c')) {
       if (running) { agent.cancel({ kind: 'user' }); return { consume: true } }
@@ -145,8 +167,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     if (disposed) return
     disposed = true
     for (const detach of detachers.splice(0)) detach()
+    panels.disposeAll()
     tui.stop()
   }
 
-  return { dispose }
+  return { dispose, panels }
 }

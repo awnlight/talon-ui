@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Text } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
@@ -34,13 +35,17 @@ function fakeAgent(id = 'main') {
   }
 }
 
-function setup() {
+// `enabled` toggles palette colors on (default off, matching every prior
+// test's plain-text assertions). Only the waiting-color test below needs
+// colors on, to tell the composer's rule-line state apart by SGR (mirrors
+// composer.spec.ts's own fg-13/fg-3 convention).
+function setup(enabled = false) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
   agent.ctx = ctx
   const terminal = new HeadlessTerminal(60, 14)
   const exit = vi.fn()
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit })
+  const controller = createController({ ctx, agent, terminal, palette: createPalette(enabled), exit })
   return { ctx, agent, terminal, exit, controller }
 }
 
@@ -166,6 +171,73 @@ describe('controller', () => {
     terminal.input('\x0c')
     await terminal.waitForFrame(before)
     expect(terminal.frames).toBeGreaterThan(before)
+    await controller.dispose()
+  })
+  it('global keys yield while a panel is active (spec D5)', async () => {
+    const { ctx, agent, terminal, exit, controller } = setup()
+    await terminal.waitForFrame(0)
+    void controller.panels.enqueue({ create: () => new Text('panel', 0, 0), forced: () => ({ outcome: undefined }) })
+    terminal.input('\x03')                       // Ctrl+C must NOT reach the exit path
+    await new Promise((r) => setTimeout(r, 10))
+    expect(exit).not.toHaveBeenCalled()
+    expect(agent.cancelled.length).toBe(0)
+    await controller.dispose()
+  })
+  it('agent/status while a panel is active keeps the waiting rule color, not streaming', async () => {
+    const { ctx, agent, terminal, controller } = setup(true) // colors on: distinguish waiting (fg-3) from streaming (fg-13)
+    await terminal.waitForFrame(0)
+    void controller.panels.enqueue({ create: () => new Text('panel', 0, 0), forced: () => ({ outcome: undefined }) })
+    agent.status = 'running'
+    const before = terminal.frames
+    ctx.emit('agent/status', { agent, status: 'running' })
+    await terminal.waitForFrame(before)
+    const snap = terminal.snapshot()
+    expect(snap).toMatch(/style 0-\d+ fg-3\b/)   // warning tone: panel wins over running
+    expect(snap).not.toMatch(/fg-13/)             // never the streaming/accent tone
+    await controller.dispose()
+  })
+  it('a panel draining (PanelManager.onActiveChange(false)) returns the rule to streaming or idle per running', async () => {
+    const { ctx, agent, terminal, controller } = setup(true) // colors on: distinguish streaming (fg-13) from idle (dim)
+    await terminal.waitForFrame(0)
+
+    let finish!: (outcome: undefined) => void
+    let before = terminal.frames
+    void controller.panels.enqueue<undefined>({
+      create: (f) => { finish = f; return new Text('panel', 0, 0) },
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)
+
+    before = terminal.frames
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    await terminal.waitForFrame(before) // settle the (still-waiting) render before draining
+
+    before = terminal.frames
+    finish(undefined) // drains while running -> onActiveChange(false) should pick 'streaming'
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toMatch(/style 0-\d+ fg-13\b/)
+
+    before = terminal.frames
+    void controller.panels.enqueue<undefined>({
+      create: (f) => { finish = f; return new Text('panel', 0, 0) },
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)
+
+    before = terminal.frames
+    agent.status = 'idle'
+    ctx.emit('agent/status', { agent, status: 'idle' })
+    await terminal.waitForFrame(before)
+
+    before = terminal.frames
+    finish(undefined) // drains while idle -> onActiveChange(false) should pick 'idle'
+    await terminal.waitForFrame(before)
+    const snap = terminal.snapshot()
+    expect(snap).toMatch(/style 0-\d+ dim\b/)
+    expect(snap).not.toMatch(/fg-3\b/)
+    expect(snap).not.toMatch(/fg-13/)
+
     await controller.dispose()
   })
 })

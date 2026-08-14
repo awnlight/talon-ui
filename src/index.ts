@@ -97,7 +97,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const terminal = new ProcessTerminal()
       const removeGuards = installProcessGuards(ctx)
       const controller = createController({
-        ctx: agent.ctx ?? ctx,
+        ctx: anyCtx,
         agent,
         terminal,
         palette: createPalette(enabled),
