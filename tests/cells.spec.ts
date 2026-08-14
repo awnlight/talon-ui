@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createPalette } from '../src/theme/palette.ts'
-import { CachedCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
+import { ApprovalAuditCell, CachedCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
 
 const p = createPalette(false)
 
@@ -55,6 +55,24 @@ describe('UserMessageCell / NoticeCell', () => {
     expect(new NoticeCell({ text: 'x', tone: 'info' }, colored).render(80)[0]).toBe(colored.dim('x'))
     expect(new NoticeCell({ text: 'x', tone: 'warning' }, colored).render(80)[0]).toBe(colored.warning('x'))
     expect(new NoticeCell({ text: 'x', tone: 'error' }, colored).render(80)[0]).toBe(colored.error('x'))
+  })
+})
+
+describe('ApprovalAuditCell', () => {
+  it('each outcome tone picks its own color role, and known words are relabeled', () => {
+    const colored = createPalette(true)
+    expect(new ApprovalAuditCell('bash', 'allowed-once', colored).render(80).join('\n')).toContain(colored.success('allowed once'))
+    expect(new ApprovalAuditCell('bash', 'cancelled', colored).render(80).join('\n')).toContain(colored.warning('cancelled'))
+    expect(new ApprovalAuditCell('bash', 'rejected', colored).render(80).join('\n')).toContain(colored.error('rejected'))
+    expect(new ApprovalAuditCell('bash', 'unavailable', colored).render(80).join('\n')).toContain(colored.error('unavailable'))
+  })
+  it('falls back to the raw outcome string for an unrecognized outcome word', () => {
+    const line = new ApprovalAuditCell('bash', 'mystery', p).render(80).join('\n')
+    expect(line).toContain('◆ approval · bash · mystery')
+  })
+  it('neutralizes hostile tool text at the display boundary (D7.8)', () => {
+    const line = new ApprovalAuditCell('bash\x1b]0;evil\x07', 'rejected', p).render(80).join('\n')
+    expect(line).toContain('\\x1b]0;evil\\x07')
   })
 })
 

@@ -53,6 +53,28 @@ describe('translateSessionEvent', () => {
     const out = translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: undefined, text: undefined } } })
     expect(out).toEqual([{ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: '' }])
   })
+  it('translates tool/call with a bash command preview', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c1', name: 'bash', arguments: { command: 'ls -la' } } }))
+      .toEqual([{ kind: 'tool-call', callId: 'c1', name: 'bash', preview: 'ls -la' }])
+  })
+  it('translates tool/call without a string command to an undefined preview', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c2', name: 'read', arguments: { path: '/x' } } }))
+      .toEqual([{ kind: 'tool-call', callId: 'c2', name: 'read', preview: undefined }])
+  })
+  it('tool/call falls back to empty callId/name and an undefined preview when fields are missing', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: {} }))
+      .toEqual([{ kind: 'tool-call', callId: '', name: '', preview: undefined }])
+  })
+  it('translates the approval audit pair', () => {
+    expect(translateSessionEvent({ type: 'approval/asked', data: { id: 'a1', toolName: 'bash', callId: 'c1' } }))
+      .toEqual([{ kind: 'approval-asked', id: 'a1', toolName: 'bash' }])
+    expect(translateSessionEvent({ type: 'approval/decided', data: { id: 'a1', outcome: 'allowed-once' } }))
+      .toEqual([{ kind: 'approval-decided', id: 'a1', outcome: 'allowed-once' }])
+  })
+  it('approval/asked falls back to an empty toolName when missing', () => {
+    expect(translateSessionEvent({ type: 'approval/asked', data: { id: 'a2' } }))
+      .toEqual([{ kind: 'approval-asked', id: 'a2', toolName: '' }])
+  })
 })
 
 describe('turn-end reason table (spec §3.2 exhaustive-with-named-default)', () => {

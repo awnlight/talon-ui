@@ -1,0 +1,20 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @7,72
+0| <blank>
+1| "─ approval ─────────────────────────────────────────────────────────────"
+  style 0-71 dim
+2| "◇ bash · pnpm test"
+  style 0-17 fg-3
+3| "  /workspace/talon-ui · sandbox escalation"
+  style 0-41 dim
+4| "  [1] allow once   [2] reject   esc cancel"
+  style 2-15 fg-13 bold
+  style 19-28 dim
+  style 32-41 dim
+5| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 fg-3
+6| <blank>
+7| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+8-17| <blank>

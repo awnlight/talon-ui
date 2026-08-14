@@ -87,4 +87,18 @@ describe('Transcript', () => {
     expect(rows.join('\n')).toContain('… earlier history')
     expect(t.mountedLines(200)).toBeLessThanOrEqual(12 + 2)            // cap respected in content terms (+marker, +trailing spacer slack)
   })
+  it('renders one audit line per decision, correlated by id (replay-safe)', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'approval-asked', id: 'a1', toolName: 'bash' })
+    expect(t.container.render(60).length).toBe(0)                      // asked alone renders nothing
+    t.apply({ kind: 'approval-decided', id: 'a1', outcome: 'allowed-once' })
+    expect(t.container.render(60).join('\n')).toContain('◆ approval · bash · allowed once')
+    t.apply({ kind: 'approval-decided', id: 'ghost', outcome: 'rejected' })
+    expect(t.container.render(60).join('\n')).toContain('◆ approval · (unknown tool) · rejected')
+  })
+  it('tool-call events are transcript-ignored (cards land in T3)', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'tool-call', callId: 'c1', name: 'bash', preview: 'ls -la' })
+    expect(t.container.render(60).length).toBe(0)
+  })
 })

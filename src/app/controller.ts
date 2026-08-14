@@ -2,9 +2,12 @@
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
 import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
+import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
+import { attachApprovalResponder } from '../backend/approval.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
+import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
@@ -97,10 +100,18 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   tui.setFocus(composer.editor)
 
   const detachers: (() => void)[] = []
+  // Tool-call previews, keyed by callId, so an approval prompt for that call
+  // can enrich its header (spec D9); cleared per turn — a callId is only
+  // ever relevant to the turn that issued it.
+  const pendingCalls = new Map<string, string>()
 
   detachers.push(ctx.on('session/event', (session: unknown, event: { type: string; data: unknown; time?: number }) => {
     if (session !== bound.session || disposed) return
-    for (const appEvent of translateSessionEvent(event)) transcript.apply(appEvent)
+    for (const appEvent of translateSessionEvent(event)) {
+      if (appEvent.kind === 'tool-call' && appEvent.preview !== undefined) pendingCalls.set(appEvent.callId, appEvent.preview)
+      if (appEvent.kind === 'turn-end') pendingCalls.clear()
+      transcript.apply(appEvent)
+    }
     tui.requestRender()
   }))
 
@@ -110,6 +121,25 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
     composer.setHint(running ? HINT_RUNNING : HINT_IDLE)
     tui.requestRender()
+  }))
+
+  // The approval/request waterfall responder (spec D9): claims only this
+  // controller's bound agent's requests by identity, presents them through
+  // the same PanelManager FIFO every other panel uses. A signal abort while
+  // the panel is showing force-closes it 'cancelled'; teardown rejects (the
+  // real ApprovalService normalizes a rejection to 'unavailable' — fail
+  // closed, Ruling 7).
+  detachers.push(attachApprovalResponder(ctx as never, {
+    isBound: (a) => a === bound,
+    present: (req) => panels.enqueue<ApprovalOutcome>({
+      create: (finish) => new ApprovalPanel({
+        toolName: req.toolName,
+        preview: req.callId === undefined ? undefined : pendingCalls.get(req.callId),
+        reason: req.reason,
+        cwd: process.cwd(),
+      }, finish, palette),
+      forced: (reason) => reason === 'aborted' ? { outcome: 'cancelled' } : { error: new Error('talon-ui torn down before the approval was answered') },
+    }, req.signal === undefined ? {} : { signal: req.signal }),
   }))
 
   composer.onSubmit = (text) => {

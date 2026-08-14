@@ -5,7 +5,7 @@
 import { Container, Spacer, Text, type Component } from '@earendil-works/pi-tui'
 import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
-import { NoticeCell, UserMessageCell } from './cells.js'
+import { ApprovalAuditCell, NoticeCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
@@ -28,6 +28,10 @@ export class Transcript {
   // renders the container just to check the cap. mountedLines(width) still does a
   // real render, but only when an external caller asks for a specific width.
   private mountedLineCount = 0
+  // approval-asked carries no audit text of its own — it only tells the
+  // matching approval-decided which tool it was asked about (spec D9's
+  // replay-safe id correlation; the pair need not be contiguous).
+  private readonly askedTools = new Map<string, string>()
 
   constructor(private readonly palette: Palette, options?: { mountCapLines?: number }) {
     this.cap = options?.mountCapLines ?? 5000
@@ -74,6 +78,19 @@ export class Transcript {
         break
       case 'turn-start': case 'step-start': case 'step-end':
         break
+      case 'tool-call':
+        break // cards land in T3; the controller consumes previews
+      case 'approval-asked':
+        this.askedTools.set(event.id, event.toolName)
+        break
+      case 'approval-decided': {
+        const tool = this.askedTools.get(event.id) ?? '(unknown tool)'
+        this.askedTools.delete(event.id)
+        this.spaceBeforeNewCell()
+        const c = new ApprovalAuditCell(tool, event.outcome, this.palette)
+        this.addChild(c, c.contentLineCount())
+        break
+      }
     }
     this.trim()
   }

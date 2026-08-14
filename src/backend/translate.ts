@@ -44,6 +44,15 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
     }
     case 'assistant/message':
       return [{ kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] }]
+    case 'tool/call': {
+      const args = d.arguments as Record<string, unknown> | undefined
+      const command = args?.command
+      return [{ kind: 'tool-call', callId: String(d.callId ?? ''), name: String(d.name ?? ''), preview: typeof command === 'string' ? command : undefined }]
+    }
+    case 'approval/asked':
+      return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
+    case 'approval/decided':
+      return [{ kind: 'approval-decided', id: String(d.id), outcome: String(d.outcome) }]
     default:
       return []
   }

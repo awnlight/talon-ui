@@ -2,7 +2,7 @@
  * zero gutter decoration, so drag-select copies exact message text (spec §4.1).
  * Perf law: render(width) serves a width-keyed cache; recompute only via
  * renderLines(); every mutator calls dropLines() (spec §5.1). */
-import { wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
+import { truncateToWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
 import type { Notice } from '../../backend/app-events.js'
 import { displayText, type Palette } from '../../theme/palette.js'
 
@@ -46,5 +46,22 @@ export class NoticeCell extends CachedCell {
   protected renderLines(width: number): string[] {
     const tone = this.notice.tone === 'error' ? this.palette.error : this.notice.tone === 'warning' ? this.palette.warning : this.palette.dim
     return wrapPlain(displayText(this.notice.text), width).map((row) => tone(row))
+  }
+}
+
+const OUTCOME_WORDS: Record<string, string> = { 'allowed-once': 'allowed once', rejected: 'rejected', cancelled: 'cancelled', unavailable: 'unavailable' }
+
+/** One dim audit line per approval decision (spec D9): `◆ approval · <tool> ·
+ * <outcome word>`, base text dim, only the outcome word toned. Committed and
+ * immutable once rendered (a CachedCell), matching every other audit/notice
+ * cell in the transcript. */
+export class ApprovalAuditCell extends CachedCell {
+  constructor(private readonly tool: string, private readonly outcome: string, private readonly palette: Palette) { super() }
+  contentLineCount(): number { return 1 }
+  protected renderLines(width: number): string[] {
+    const word = OUTCOME_WORDS[this.outcome] ?? this.outcome
+    const tone = this.outcome === 'allowed-once' ? this.palette.success : this.outcome === 'cancelled' ? this.palette.warning : this.palette.error
+    const line = `${this.palette.dim(`◆ approval · ${displayText(this.tool)} · `)}${tone(displayText(word))}`
+    return [truncateToWidth(line, Math.max(1, width), '…')]
   }
 }

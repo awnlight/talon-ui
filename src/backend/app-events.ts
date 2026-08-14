@@ -11,3 +11,6 @@ export type AppEvent =
   | { kind: 'step-end'; turn: number; step: number; time: number | undefined }
   | { kind: 'stream-delta'; turn: number; step: number; index: number; block: 'text' | 'reasoning'; text: string }
   | { kind: 'stream-settle'; turn: number; step: number; content: ContentBlockLike[] }
+  | { kind: 'tool-call'; callId: string; name: string; preview: string | undefined }
+  | { kind: 'approval-asked'; id: string; toolName: string }
+  | { kind: 'approval-decided'; id: string; outcome: string }
