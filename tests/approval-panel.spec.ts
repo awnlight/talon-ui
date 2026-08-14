@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { ApprovalPanel } from '../src/ui/panels/approval-panel.ts'
 import { createPalette } from '../src/theme/palette.ts'
 
-function mount(prompt = {}) {
+function mount(prompt = {}, colorsEnabled = false) {
   const outcomes: string[] = []
   const panel = new ApprovalPanel(
     { toolName: 'bash', preview: 'rm -rf node_modules && pnpm install', reason: 'sandbox escalation', cwd: '/workspace', ...prompt },
     (o) => outcomes.push(o),
-    createPalette(false),
+    createPalette(colorsEnabled),
   )
   return { panel, outcomes }
 }
@@ -25,6 +25,17 @@ describe('ApprovalPanel', () => {
     expect(text).toContain('[2] reject')
     expect(text).toContain('esc cancel')
     for (const row of rows) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(44)
+  })
+  it('truncates every row at a narrow width, ellipsis engaged incl. the styled options row (review round 1)', () => {
+    // Colors enabled: the head/meta/options rows carry real pre-existing SGR (p.warning/p.dim/p.bold/p.accent)
+    // before hitting truncateToWidth, exercising its ANSI-aware path rather than the plain-ASCII fast path.
+    const { panel } = mount({}, true)
+    const rows = panel.render(12)
+    for (const row of rows) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(12)
+    const text = rows.join('\n')
+    expect(text).toContain('…')
+    const optionsRow = rows[4]!
+    expect(optionsRow).toContain('…') // the options row: 3 independently-styled segments concatenated, then truncated as one string
   })
   it('neutralizes hostile tool text at the display boundary (D7.8)', () => {
     const { panel } = mount({ toolName: 'bash\x1b]0;evil\x07', preview: 'echo \x1b[31mred' })
@@ -54,9 +65,15 @@ describe('ApprovalPanel', () => {
     expect(text).toContain('◇ bash')
     expect(text).toContain('/workspace')
   })
-  it('left/up wraps the highlight backward from the first option', () => {
+  it('left wraps the highlight backward from the first option', () => {
     const { panel, outcomes } = mount()
     panel.handleInput!('\x1b[D')   // left → wraps 0 -> "reject" (last option)
+    panel.handleInput!('\r')
+    expect(outcomes).toEqual(['rejected'])
+  })
+  it('up wraps the highlight backward independently of left (review round 1)', () => {
+    const { panel, outcomes } = mount()
+    panel.handleInput!('\x1b[A')   // up → wraps 0 -> "reject" (last option)
     panel.handleInput!('\r')
     expect(outcomes).toEqual(['rejected'])
   })
