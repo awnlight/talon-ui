@@ -3,12 +3,15 @@
  * same handlers — no side-channel state (spec §2 data flow). */
 import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
+import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import { attachApprovalResponder } from '../backend/approval.js'
+import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
+import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
 export interface ControllerDeps {
@@ -30,6 +33,9 @@ export interface ControllerDeps {
   }
   terminal: Terminal
   palette: Palette
+  /** Minimal facet of dsh's `ctx.userQuestions` (spec §3.4) — just enough for
+   * `attachQuestionProvider` to register the one active UI provider. */
+  userQuestions: { registerProvider(p: { ask(req: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> }): () => void }
   exit(code: number): void
 }
 
@@ -140,6 +146,30 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       }, finish, palette),
       forced: (reason) => reason === 'aborted' ? { outcome: 'cancelled' } : { error: new Error('talon-ui torn down before the approval was answered') },
     }, req.signal === undefined ? {} : { signal: req.signal }),
+  }))
+
+  // The user-questions provider (spec §3.4): one QuestionPanel session per
+  // request, walking its questions serially through the same PanelManager
+  // FIFO. QuestionPanel's `cancel()` cannot throw directly (GuardedPanel
+  // would settle that as a crash, indistinguishable from a bug) — so both the
+  // panel's own dismissal AND a forced teardown/abort settle the enqueue with
+  // a discriminated outcome, and only THIS function maps 'cancelled' to the
+  // exact rejection dsh's plan-mode narrows on (Ruling 7).
+  detachers.push(attachQuestionProvider(deps.userQuestions as never, {
+    present: async (request) => {
+      const result = await panels.enqueue<{ kind: 'answered'; answer: AskUserQuestionAnswer } | { kind: 'cancelled' }>({
+        create: (finish) => new QuestionPanel(
+          request as never,
+          (answer) => finish({ kind: 'answered', answer }),
+          () => finish({ kind: 'cancelled' }),
+          palette,
+          () => Math.max(6, Math.min(20, terminal.rows - 6)),
+        ),
+        forced: () => ({ outcome: { kind: 'cancelled' } }),
+      }, request.signal === undefined ? {} : { signal: request.signal })
+      if (result.kind === 'cancelled') throw cancelledError()
+      return result.answer
+    },
   }))
 
   composer.onSubmit = (text) => {

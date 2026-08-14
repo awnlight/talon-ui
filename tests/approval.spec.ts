@@ -92,7 +92,9 @@ function setup() {
   agent.ctx = ctx
   const terminal = new HeadlessTerminal(60, 14)
   const exit = vi.fn()
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit })
+  // This file doesn't exercise user-questions flows (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
+  const userQuestions = { registerProvider: () => () => {} }
+  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions })
   return { ctx, agent, terminal, exit, controller }
 }
 

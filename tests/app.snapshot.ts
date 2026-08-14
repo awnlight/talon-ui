@@ -17,7 +17,9 @@ describe('talon snapshots', () => {
     }
     const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
     const terminal = new HeadlessTerminal(72, 18)
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {} })
+    // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
+    const userQuestions = { registerProvider: () => () => {} }
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Rename the button.' }] } })
@@ -49,7 +51,9 @@ describe('talon snapshots', () => {
     }
     const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
     const terminal = new HeadlessTerminal(72, 18)
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {} })
+    // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
+    const userQuestions = { registerProvider: () => () => {} }
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'tool/call', data: { callId: 'c1', name: 'bash', arguments: { command: 'pnpm test' } } })
