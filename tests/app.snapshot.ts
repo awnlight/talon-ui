@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
