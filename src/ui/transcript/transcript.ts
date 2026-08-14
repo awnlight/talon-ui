@@ -22,12 +22,10 @@ export class Transcript {
   private live: { key: string; cell: StreamingAssistantCell } | undefined
   private readonly cap: number
   private marker: Text | undefined
-  // Running total mirroring container.render(width).length (D10 mount cap),
-  // maintained incrementally so apply() never renders the container just to
-  // check the cap. That render used to run on EVERY apply() at an invented
-  // width (200) nothing else used — ~500x per-event overhead, and it
-  // thrashed every cell's single-slot width cache against whatever width
-  // real callers actually render at. mountedLines(width) below still does a
+  // The running total mirrors CONTENT lines (logical, pre-wrap); visual rows may
+  // exceed it by the wrap factor — bounded, by design (D10). The trim marker is
+  // one content line. This accounting is maintained incrementally so apply() never
+  // renders the container just to check the cap. mountedLines(width) still does a
   // real render, but only when an external caller asks for a specific width.
   private mountedLineCount = 0
 
@@ -40,7 +38,7 @@ export class Transcript {
   apply(event: AppEvent): void {
     switch (event.kind) {
       case 'user-message':
-        if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+        this.spaceBeforeNewCell()
         { const c = new UserMessageCell(event.text, this.palette); this.addChild(c, c.contentLineCount()) }
         break
       case 'stream-delta': {
@@ -55,7 +53,7 @@ export class Transcript {
         const cell = this.cell(key)
         if (cell.isSettled()) {
           // A settled cell never re-absorbs a later message (replay-parity fix): new cell.
-          if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+          this.spaceBeforeNewCell()
           const fresh = new StreamingAssistantCell(this.palette)
           fresh.settle(event.content)
           this.addChild(fresh, fresh.lineCount())
@@ -69,7 +67,7 @@ export class Transcript {
       }
       case 'turn-end':
         if (event.notice) {
-          if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+          this.spaceBeforeNewCell()
           { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
         }
         this.live = undefined
@@ -85,9 +83,15 @@ export class Transcript {
     this.mountedLineCount += lines
   }
 
+  /** One rule, four former call sites: every new cell is preceded by a
+   * one-line spacer unless it is the very first child (spec §4.1 spacing). */
+  private spaceBeforeNewCell(): void {
+    if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+  }
+
   private cell(key: string): StreamingAssistantCell {
     if (this.live?.key !== key) {
-      if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+      this.spaceBeforeNewCell()
       const cell = new StreamingAssistantCell(this.palette)
       this.addChild(cell, cell.lineCount())
       this.live = { key, cell }

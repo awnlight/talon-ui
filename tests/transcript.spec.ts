@@ -71,4 +71,20 @@ describe('Transcript', () => {
     for (let i = 0; i < 1000; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })
     expect(renderSpy).not.toHaveBeenCalled()
   })
+  it('extracts one spacer rule: a spacer precedes every new cell except the first', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'user-message', text: 'a' })                       // no spacer before the first
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'x' })
+    t.apply({ kind: 'turn-end', turn: 1, notice: { text: 'Turn blocked.', tone: 'warning' } })
+    const rows = t.container.render(40)
+    expect(rows.filter((r) => r === '').length).toBe(2)                // exactly one blank between each pair
+  })
+  it('trim at narrow width: marker accounts as 1 content line and the cap keeps bounding', () => {
+    const t = new Transcript(createPalette(false), { mountCapLines: 12 })
+    for (let i = 0; i < 30; i++) t.apply({ kind: 'user-message', text: `message number ${i} that is long` })
+    // content-line accounting is width-free; at width 24 the marker wraps to 2 visual rows — allowed
+    const rows = t.container.render(24)
+    expect(rows.join('\n')).toContain('… earlier history')
+    expect(t.mountedLines(200)).toBeLessThanOrEqual(12 + 2)            // cap respected in content terms (+marker, +trailing spacer slack)
+  })
 })
