@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CURSOR_MARKER } from '@earendil-works/pi-tui'
 import { QuestionPanel } from '../src/ui/panels/question-panel.ts'
 import { createPalette } from '../src/theme/palette.ts'
 
@@ -61,7 +62,7 @@ describe('QuestionPanel core', () => {
   })
   // Coverage-closing additions beyond the brief's 5 pinned tests above (none
   // of which exercise: invalidate(), the 'up' branch, an out-of-range digit,
-  // a no-options question, or a set `detail` — see task-8-report.md).
+  // or a set `detail` — see task-8-report.md).
   it('invalidate is a safe no-op (no cached render state)', () => {
     const { panel } = mountQuestions([q()])
     expect(() => panel.invalidate()).not.toThrow()
@@ -79,16 +80,117 @@ describe('QuestionPanel core', () => {
     panel.handleInput!('\r')
     expect(answers).toEqual([{ answers: [{ id: 'q1', selected: ['Careful'] }] }])
   })
-  it('a question with no options shows the select-at-least-one error on submit', () => {
-    const { panel, answers } = mountQuestions([q({ options: undefined })])
-    panel.handleInput!('\r')
-    // Substring, not the full message: at width 52 truncateToWidth ellipsizes
-    // it (61 chars) — matches Task 9's own pinned test for the same string.
-    expect(panel.render(52).join('\n')).toContain('Select at least one option')
-    expect(answers).toEqual([])
-  })
   it('renders question detail when present', () => {
     const { panel } = mountQuestions([q({ detail: 'Extra context here.' })])
     expect(panel.render(52).join('\n')).toContain('Extra context here.')
+  })
+})
+
+const mq = (over: Record<string, unknown> = {}) => q({ multiSelect: true, ...over })
+
+describe('QuestionPanel multiSelect + custom', () => {
+  it('space toggles marks; enter submits checked labels in option order', () => {
+    const { panel, answers } = mountQuestions([mq()])
+    panel.handleInput!('\x1b[B')      // cursor → Careful
+    panel.handleInput!(' ')           // check Careful
+    panel.handleInput!('\x1b[A')      // cursor → Fast
+    panel.handleInput!(' ')           // check Fast
+    expect(panel.render(52).join('\n')).toContain('[x] Fast')
+    panel.handleInput!('\r')
+    expect(answers).toEqual([{ answers: [{ id: 'q1', selected: ['Fast', 'Careful'] }] }])  // option order, not click order
+  })
+  it('empty submit shows the validation error and stays open', () => {
+    const { panel, answers } = mountQuestions([mq()])
+    panel.handleInput!('\r')
+    expect(panel.render(52).join('\n')).toContain('Select at least one option')
+    expect(answers).toEqual([])
+  })
+  it('tab enters custom mode; typed text submits as custom', () => {
+    const { panel, answers } = mountQuestions([q()])
+    panel.handleInput!('\t')
+    for (const ch of 'my own way') panel.handleInput!(ch)
+    panel.handleInput!('\r')
+    expect(answers).toEqual([{ answers: [{ id: 'q1', selected: [], custom: 'my own way' }] }])
+  })
+  it("bare 'c' also enters custom mode; esc returns to options and keeps the draft", () => {
+    const { panel, answers } = mountQuestions([mq()])
+    panel.handleInput!('c')
+    for (const ch of 'keep this') panel.handleInput!(ch)
+    panel.handleInput!('\x1b')                    // back to options, draft retained
+    panel.handleInput!(' ')                       // check Fast
+    panel.handleInput!('\r')
+    expect(answers).toEqual([{ answers: [{ id: 'q1', selected: ['Fast'], custom: 'keep this' }] }])  // old-TUI merge law
+  })
+  it('custom-mode empty submit errors', () => {
+    const { panel } = mountQuestions([q()])
+    panel.handleInput!('\t')
+    panel.handleInput!('\r')
+    expect(panel.render(52).join('\n')).toContain('Enter an answer before submitting.')
+  })
+  it('a question with no options starts in custom mode and esc cancels the request', () => {
+    const { panel, cancelled } = mountQuestions([q({ options: undefined })])
+    expect(panel.render(52).join('\n')).toContain('Esc cancel')
+    panel.handleInput!('\x1b')
+    expect(cancelled()).toBe(1)
+  })
+  it('single-select ignores space', () => {
+    const { panel } = mountQuestions([q()])
+    panel.handleInput!(' ')
+    expect(panel.render(52).join('\n')).not.toContain('[x]')
+  })
+  // Coverage-closing additions beyond the 7 pinned tests above (none of which
+  // exercise: submitCustom's multiSelect merge, the custom hint's counter,
+  // un-checking a mark, the per-question reset, or Focusable forwarding).
+  it('custom-mode submit merges the checked labels; the hint counts them', () => {
+    const { panel, answers } = mountQuestions([mq()])
+    panel.handleInput!(' ')                       // check Fast
+    panel.handleInput!('\x1b[B')                  // cursor → Careful
+    panel.handleInput!(' ')                       // check Careful
+    panel.handleInput!('\t')
+    expect(panel.render(52).join('\n')).toContain('2 selected • Enter submit • Esc options')
+    for (const ch of 'plus a note') panel.handleInput!(ch)
+    // The Input row pads itself to the full width — pin the no-crash invariant.
+    for (const row of panel.render(30)) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(30)
+    panel.handleInput!('\r')
+    expect(answers).toEqual([{ answers: [{ id: 'q1', selected: ['Fast', 'Careful'], custom: 'plus a note' }] }])
+  })
+  it('space on an already-checked option clears the mark', () => {
+    const { panel } = mountQuestions([mq()])
+    panel.handleInput!(' ')
+    expect(panel.render(52).join('\n')).toContain('[x] Fast')
+    panel.handleInput!(' ')
+    expect(panel.render(52).join('\n')).toContain('[ ] Fast')
+  })
+  it('advancing resets per-question state: marks, draft, and mode', () => {
+    const { panel, answers } = mountQuestions([mq(), mq({ id: 'q2', question: 'Anything else?' }), q({ id: 'q3', question: 'Last word?', options: undefined })])
+    panel.handleInput!(' ')                       // check Fast
+    panel.handleInput!('\t')
+    for (const ch of 'first') panel.handleInput!(ch)
+    panel.handleInput!('\r')                      // answers q1, advances to q2
+    const second = panel.render(52).join('\n')
+    expect(second).toContain('Question 2/3 (2 unanswered)')
+    expect(second).toContain('[ ] Fast')          // marks cleared, back in options mode
+    expect(second).not.toContain('[x]')
+    panel.handleInput!('\x1b[B')                  // cursor → Careful
+    panel.handleInput!(' ')
+    panel.handleInput!('\r')                      // answers q2, advances to q3 (no options → custom)
+    const third = panel.render(52).join('\n')
+    expect(third).toContain('Esc cancel')
+    expect(third).not.toContain('first')          // the draft was cleared too
+    for (const ch of 'last') panel.handleInput!(ch)
+    panel.handleInput!('\r')
+    expect(answers).toEqual([{ answers: [
+      { id: 'q1', selected: ['Fast'], custom: 'first' },
+      { id: 'q2', selected: ['Careful'] },
+      { id: 'q3', selected: [], custom: 'last' },
+    ] }])
+  })
+  it('forwards focus to the custom Input so its caret marker renders', () => {
+    const { panel } = mountQuestions([q()])
+    panel.focused = true
+    expect(panel.focused).toBe(true)
+    expect(panel.render(52).join('\n')).not.toContain(CURSOR_MARKER)   // options mode renders no Input
+    panel.handleInput!('\t')
+    expect(panel.render(52).join('\n')).toContain(CURSOR_MARKER)
   })
 })
