@@ -149,9 +149,10 @@ export class QuestionPanel implements Component {
     const rows: string[] = ['', panelRule('question', safe, p)]
     rows.push(...compacted.rows.map((text, i) => {
       // Past the windowed rows sits compactHeader's own status row — dim, and
-      // the one header row long enough to need truncating.
-      const source: HeaderRow | undefined = header[compacted.page.offset + i]
-      return source === undefined || source.dim ? p.dim(truncateToWidth(text, safe, '…')) : text
+      // the one header row long enough to need truncating. It is appended
+      // exactly when compaction engaged, which is exactly `maxOffset > 0`.
+      const status = compacted.page.maxOffset > 0 && i === compacted.rows.length - 1
+      return status || header[compacted.page.offset + i]!.dim ? p.dim(truncateToWidth(text, safe, '…')) : text
     }))
     rows.push('')
     if (this.mode === 'custom') {

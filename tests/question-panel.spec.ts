@@ -3,14 +3,14 @@ import { CURSOR_MARKER } from '@earendil-works/pi-tui'
 import { QuestionPanel } from '../src/ui/panels/question-panel.ts'
 import { createPalette } from '../src/theme/palette.ts'
 
-export function mountQuestions(questions: unknown[], overrides: Partial<{ maxHeight: number }> = {}) {
+export function mountQuestions(questions: unknown[], overrides: Partial<{ maxHeight: number; colors: boolean }> = {}) {
   const answers: unknown[] = []
   let cancelled = 0
   const panel = new QuestionPanel(
     { questions: questions as never },
     (a) => answers.push(a),
     () => { cancelled += 1 },
-    createPalette(false),
+    createPalette(overrides.colors ?? false),
     () => overrides.maxHeight ?? 18,
   )
   return { panel, answers, cancelled: () => cancelled }
@@ -237,5 +237,20 @@ describe('QuestionPanel pagination (two-level rule, spec §4.4)', () => {
     expect(panel.render(40).join('\n')).toContain('… ↑ 2 lines hidden')
     panel.handleInput!('\x1b[5~')                    // PgUp → rewinds the block, not the header
     expect(panel.render(40).join('\n')).toContain('› 1. x')
+  })
+  // Regression (review round 1): the status row used to be identified by an
+  // out-of-range `header[end]` lookup, which only reads `undefined` on the LAST
+  // page — so on every earlier page (the FIRST render included) the row came out
+  // raw: undimmed, and untruncated, which TuiMainScreen turns into a crash.
+  it('dims the pager status row on the first page, not only the last (review round 1)', () => {
+    const { panel } = mountQuestions([q({ detail: Array.from({ length: 40 }, (_, i) => `detail line ${i}`).join('\n') })], { maxHeight: 14, colors: true })
+    const status = panel.render(60).find((row) => row.includes('PgUp/PgDn'))!
+    expect(status).toMatch(/^\x1b\[2;39m… lines 1-\d+\/\d+ • PgUp\/PgDn\x1b\[22;39m$/)
+  })
+  it('keeps every row inside the width with the header compacted, first page and paged forward (review round 1)', () => {
+    const { panel } = mountQuestions([q({ detail: Array.from({ length: 40 }, (_, i) => `detail line ${i}`).join('\n') })], { maxHeight: 14, colors: true })
+    for (const row of panel.render(20)) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(20)
+    panel.handleInput!('\x1b[6~')                    // PgDn → a mid-header page, where the status row is widest
+    for (const row of panel.render(20)) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(20)
   })
 })
