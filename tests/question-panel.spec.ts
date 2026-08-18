@@ -194,3 +194,48 @@ describe('QuestionPanel multiSelect + custom', () => {
     expect(panel.render(52).join('\n')).toContain(CURSOR_MARKER)
   })
 })
+
+describe('QuestionPanel pagination (two-level rule, spec §4.4)', () => {
+  const tall = () => mountQuestions([q({ detail: Array.from({ length: 40 }, (_, i) => `detail line ${i}`).join('\n') })], { maxHeight: 14 })
+  it('PgDn pages the header first', () => {
+    const { panel } = tall()
+    const before = panel.render(60).join('\n')
+    expect(before).toContain('detail line 0')
+    panel.handleInput!('\x1b[6~')                    // PgDn
+    const after = panel.render(60).join('\n')
+    expect(after).not.toContain('detail line 0')
+    expect(after).toMatch(/lines \d+-\d+\/\d+/)
+  })
+  it('PgUp rewinds the header after PgDn', () => {
+    const { panel } = tall()
+    panel.handleInput!('\x1b[6~')
+    panel.handleInput!('\x1b[5~')                    // PgUp
+    expect(panel.render(60).join('\n')).toContain('detail line 0')
+  })
+  it('renders hidden-block markers and the position line for many options', () => {
+    const options = Array.from({ length: 12 }, (_, i) => ({ label: `Option ${i}` }))
+    const { panel } = mountQuestions([q({ options })], { maxHeight: 12 })
+    const text = panel.render(60).join('\n')
+    expect(text).toMatch(/↓ \d+ more/)
+    expect(text).toContain('1/12')
+  })
+  it('arrow movement resets selected-block paging', () => {
+    const options = [{ label: 'x'.repeat(400) }, { label: 'small' }]
+    const { panel } = mountQuestions([q({ options })], { maxHeight: 10 })
+    panel.handleInput!('\x1b[6~')                    // page into the oversized selected block (header is short → falls through)
+    panel.handleInput!('\x1b[B')                     // move → reset
+    const text = panel.render(40).join('\n')
+    expect(text).toContain('small')
+  })
+  // Coverage-closing addition beyond the brief's 4 pinned tests above: none of
+  // them press PgUp while paged INTO an oversized block — the block-first half
+  // of the spec's two-level rule (and the only uncovered branch left).
+  it('PgUp rewinds the oversized selected block before the header', () => {
+    const { panel } = mountQuestions([q({ options: [{ label: 'x'.repeat(400) }, { label: 'small' }] })], { maxHeight: 10 })
+    expect(panel.render(40).join('\n')).toContain('› 1. x')
+    panel.handleInput!('\x1b[6~')                    // PgDn → into the block (the header fits, so it falls through)
+    expect(panel.render(40).join('\n')).toContain('… ↑ 2 lines hidden')
+    panel.handleInput!('\x1b[5~')                    // PgUp → rewinds the block, not the header
+    expect(panel.render(40).join('\n')).toContain('› 1. x')
+  })
+})
