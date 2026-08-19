@@ -17,6 +17,10 @@ function questionService() {
   }
 }
 
+/** No checkpoint drives slash commands (see tests/controller.spec.ts) — a
+ * no-op registry stub satisfies ControllerDeps. */
+const commandService = () => ({ register: () => () => {}, list: () => [], execute: async () => undefined })
+
 /** Feed keystrokes one settled frame at a time — a checkpoint must never race
  * a frame still in flight. */
 async function type(terminal: HeadlessTerminal, keys: string[]): Promise<void> {
@@ -39,7 +43,7 @@ describe('talon snapshots', () => {
     const terminal = new HeadlessTerminal(72, 18)
     // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
     const userQuestions = { registerProvider: () => () => {} }
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Rename the button.' }] } })
@@ -73,7 +77,7 @@ describe('talon snapshots', () => {
     const terminal = new HeadlessTerminal(72, 18)
     // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
     const userQuestions = { registerProvider: () => () => {} }
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'tool/call', data: { callId: 'c1', name: 'bash', arguments: { command: 'pnpm test' } } })
@@ -108,7 +112,7 @@ describe('talon snapshots', () => {
   it('question-multiselect', async () => {
     const terminal = new HeadlessTerminal(72, 24)
     const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
     await terminal.waitForFrame(0)
     const before = terminal.frames
     const outcome = userQuestions.provider!.ask({ questions: [{
@@ -131,7 +135,7 @@ describe('talon snapshots', () => {
   it('plan-review', async () => {
     const terminal = new HeadlessTerminal(72, 24)
     const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
     await terminal.waitForFrame(0)
     const before = terminal.frames
     const outcome = userQuestions.provider!.ask({ questions: [{

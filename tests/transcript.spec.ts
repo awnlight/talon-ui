@@ -101,4 +101,31 @@ describe('Transcript', () => {
     t.apply({ kind: 'tool-call', callId: 'c1', name: 'bash', preview: 'ls -la' })
     expect(t.container.render(60).length).toBe(0)
   })
+  it('echoes command/run as one dim line, with and without args', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'command-run', name: 'status', args: undefined })
+    t.apply({ kind: 'command-run', name: 'help', args: 'verbose' })
+    const rows = t.container.render(60)
+    expect(rows).toContain('/status')
+    expect(rows).toContain('/help verbose')
+  })
+  it('renders command/done text as a notice, error-toned for a failed command', () => {
+    const t = new Transcript(createPalette(true)) // colors on: the tone is the only difference between the two lines
+    t.apply({ kind: 'command-done', result: 'success', text: 'session s1' })
+    t.apply({ kind: 'command-done', result: 'error', text: 'no such session' })
+    const out = t.container.render(60).join('\n')
+    expect(out).toContain('\x1b[2;39msession s1')  // dim: info tone
+    expect(out).toContain('\x1b[31mno such session') // red: error tone
+  })
+  it('a command/done without text renders nothing (empty text included)', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'command-done', result: 'success', text: undefined })
+    t.apply({ kind: 'command-done', result: 'success', text: '' })
+    expect(t.container.render(60).length).toBe(0)
+  })
+  it('renders a UI-local notice (never a durable event) with its tone', () => {
+    const t = new Transcript(createPalette(false))
+    t.apply({ kind: 'notice', notice: { text: 'Unknown command: /nope', tone: 'warning' } })
+    expect(t.container.render(60).join('\n')).toContain('Unknown command: /nope')
+  })
 })

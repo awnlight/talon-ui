@@ -94,7 +94,9 @@ function setup() {
   const exit = vi.fn()
   // This file doesn't exercise user-questions flows (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
   const userQuestions = { registerProvider: () => () => {} }
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions })
+  // Nor slash commands (same) — a no-op registry stub satisfies ControllerDeps.
+  const commands = { register: () => () => {}, list: () => [], execute: async () => undefined }
+  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions, commands })
   return { ctx, agent, terminal, exit, controller }
 }
 

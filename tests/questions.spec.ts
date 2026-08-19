@@ -84,7 +84,9 @@ function setup() {
   const terminal = new HeadlessTerminal(60, 14)
   const exit = vi.fn()
   const userQuestions = fakeService()
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions })
+  // No slash-command flow here (see tests/controller.spec.ts) — a no-op registry stub satisfies ControllerDeps.
+  const commands = { register: () => () => {}, list: () => [], execute: async () => undefined }
+  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions, commands })
   return { ctx, agent, terminal, exit, controller, userQuestions }
 }
 

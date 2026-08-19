@@ -89,6 +89,28 @@ describe('translateSessionEvent', () => {
     expect(translateSessionEvent({ type: 'approval/asked', data: { id: 'a2' } }))
       .toEqual([{ kind: 'approval-asked', id: 'a2', toolName: '' }])
   })
+  it('translates command/run and command/done', () => {
+    expect(translateSessionEvent({ type: 'command/run', data: { commandId: 'c1', name: 'status', args: undefined, source: { kind: 'user' } } }))
+      .toEqual([{ kind: 'command-run', name: 'status', args: undefined }])
+    expect(translateSessionEvent({ type: 'command/run', data: { commandId: 'c1', name: 'help', args: 'verbose', source: { kind: 'user' } } }))
+      .toEqual([{ kind: 'command-run', name: 'help', args: 'verbose' }])
+    expect(translateSessionEvent({ type: 'command/done', data: { commandId: 'c1', kind: 'success', text: 'ok' } }))
+      .toEqual([{ kind: 'command-done', result: 'success', text: 'ok' }])
+    expect(translateSessionEvent({ type: 'command/done', data: { commandId: 'c1', kind: 'error', text: 'nope' } }))
+      .toEqual([{ kind: 'command-done', result: 'error', text: 'nope' }])
+    expect(translateSessionEvent({ type: 'command/done', data: { commandId: 'c1', kind: 'success' } }))
+      .toEqual([{ kind: 'command-done', result: 'success', text: undefined }])
+  })
+  it('command/run args arrive as parseCommand rawInput (separator whitespace kept, empty when absent)', () => {
+    // Real wire shape, verified against dsh's own parser: parseCommand's
+    // lookahead leaves the separator in rawInput, and execute always records
+    // that verbatim string (commands/src/index.ts:101-107, :307-312), so
+    // `/help verbose` logs args ' verbose' and `/status` logs args ''.
+    expect(translateSessionEvent({ type: 'command/run', data: { commandId: 'c1', name: 'help', args: ' verbose', source: { kind: 'user' } } }))
+      .toEqual([{ kind: 'command-run', name: 'help', args: 'verbose' }])
+    expect(translateSessionEvent({ type: 'command/run', data: { commandId: 'c1', name: 'status', args: '', source: { kind: 'user' } } }))
+      .toEqual([{ kind: 'command-run', name: 'status', args: undefined }])
+  })
 })
 
 describe('turn-end reason table (spec §3.2 exhaustive-with-named-default)', () => {

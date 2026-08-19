@@ -56,6 +56,17 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':
       return [{ kind: 'approval-decided', id: String(d.id), outcome: String(d.outcome) }]
+    case 'command/run': {
+      // dsh records `args` as parseCommand's verbatim rawInput — the separator
+      // whitespace stays in it and an argument-less command records '' (the
+      // lookahead + `line.slice(match[0].length)` at commands/src/index.ts:
+      // 101-107, recorded at :307-312). Trim it to the UI's own vocabulary:
+      // the argument text, or undefined when there is none.
+      const args = typeof d.args === 'string' ? d.args.trim() : ''
+      return [{ kind: 'command-run', name: String(d.name), args: args === '' ? undefined : args }]
+    }
+    case 'command/done':
+      return [{ kind: 'command-done', result: d.kind === 'error' ? 'error' : 'success', text: d.text }]
     default:
       return []
   }

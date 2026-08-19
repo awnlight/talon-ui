@@ -91,6 +91,23 @@ export class Transcript {
         this.addChild(c, c.contentLineCount())
         break
       }
+      case 'command-run': {
+        this.spaceBeforeNewCell()
+        const c = new NoticeCell({ text: `/${event.name}${event.args === undefined ? '' : ` ${event.args}`}`, tone: 'info' }, this.palette)
+        this.addChild(c, c.contentLineCount())
+        break
+      }
+      case 'command-done':
+        if (event.text !== undefined && event.text !== '') {
+          this.spaceBeforeNewCell()
+          const c = new NoticeCell({ text: event.text, tone: event.result === 'error' ? 'error' : 'info' }, this.palette)
+          this.addChild(c, c.contentLineCount())
+        }
+        break
+      case 'notice':
+        this.spaceBeforeNewCell()
+        { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
+        break
     }
     this.trim()
   }

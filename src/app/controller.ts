@@ -2,9 +2,12 @@
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
 import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
+import type { CommandDefinition, CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
+import { registerTalonCommands } from '../backend/commands.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
@@ -36,6 +39,14 @@ export interface ControllerDeps {
   /** Minimal facet of dsh's `ctx.userQuestions` (spec §3.4) — just enough for
    * `attachQuestionProvider` to register the one active UI provider. */
   userQuestions: { registerProvider(p: { ask(req: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> }): () => void }
+  /** Minimal facet of dsh's `ctx.commands` (spec §3.5): registration for
+   * talon's own set (global — Ruling 3), the descriptor list `/help` prints,
+   * and the executor every slash submission goes through. */
+  commands: {
+    register(def: CommandDefinition): () => void
+    list(agent: unknown): readonly CommandDescriptor[]
+    execute(agent: unknown, line: string, signal: AbortSignal): Promise<unknown>
+  }
   exit(code: number): void
 }
 
@@ -172,12 +183,43 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     },
   }))
 
+  const appendLocalNotice = (notice: Notice): void => {
+    transcript.apply({ kind: 'notice', notice })
+    tui.requestRender()
+  }
+
+  // Slash lines go to dsh's command registry, never to the model (spec §3.5):
+  // one AbortController per execution, all aborted at teardown. Only what the
+  // durable log never carries is rendered locally — an unknown/unparsable
+  // command (the service logs nothing for it) and a rejected execution (which
+  // can reject before logging anything at all: a pre-aborted signal, a failed
+  // command/run append).
+  const commandRuns = new Set<AbortController>()
+  const executeSlash = (line: string): void => {
+    const controllerAbort = new AbortController()
+    commandRuns.add(controllerAbort)
+    void Promise.resolve(deps.commands.execute(bound, line, controllerAbort.signal))
+      .then((execution) => {
+        if (disposed || execution !== undefined) return   // logged results render via durable events (Ruling 5)
+        appendLocalNotice({ text: `Unknown command: ${line.trim().split(/\s+/, 1)[0]}`, tone: 'warning' })
+      })
+      .catch((cause: unknown) => {
+        if (disposed) return
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        appendLocalNotice({ text: `Command failed: ${detail}`, tone: 'error' })
+      })
+      .finally(() => commandRuns.delete(controllerAbort))
+  }
+
   composer.onSubmit = (text) => {
     /* v8 ignore next -- defensive: dispose() tears down the terminal's input pipeline synchronously (tui.stop() -> terminal.stop()), so no keystroke can reach onSubmit once disposed is true; nothing outside this closure can invoke onSubmit directly to race it either */
     if (disposed) return
-    const message = toUserMessage(text)
-    if (running) agent.steer(message)
-    else agent.followup(message)
+    if (text.startsWith('/')) executeSlash(text)
+    else {
+      const message = toUserMessage(text)
+      if (running) agent.steer(message)
+      else agent.followup(message)
+    }
     composer.editor.setText('')
     composer.editor.addToHistory(text)
     tui.requestRender()
@@ -185,10 +227,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
 
   let exitRequested = false
   const requestExit = (): void => {
-    /* v8 ignore next -- defensive: exitRequested is always false on first entry. Both call sites below only invoke requestExit() once disposal hasn't happened yet, and dispose() (triggered synchronously by the else branch, the only branch ever taken today) tears down every input listener before a second call could ever land — so this re-entrancy guard has nothing to exercise. Kept for a future caller that might invoke requestExit() twice in the same tick. */
     if (exitRequested) return
     exitRequested = true
-    /* v8 ignore next 4 -- defensive: no current caller reaches requestExit() while running. Both call sites below guard on `!running` (Ctrl+C cancels-and-returns without calling requestExit while running; Ctrl+D is a no-op while running), so this branch has nothing to exercise today. Kept for a future caller (e.g. a /quit command) that requests exit mid-turn. */
+    // /exit and /quit reach this while a turn is running (the key bindings
+    // never do): cancel first, then tear down once the agent is idle.
     if (running) {
       agent.cancel({ kind: 'user' })
       void agent.whenIdle().then(() => { void dispose().then(() => exit(0)) })
@@ -196,6 +238,16 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       void dispose().then(() => exit(0))
     }
   }
+
+  // Global (root-ctx) registration, Ruling 3: it survives Task 16's rebind,
+  // and a single-UI process makes global equivalent to spec §3.5's agent
+  // scoping. Every stateful answer is read at call time, so /status stays
+  // truthful across status changes and rebinds.
+  detachers.push(registerTalonCommands(deps.commands, {
+    requestExit,
+    statusLines: () => [`session ${bound.id}`, `workspace ${process.cwd()}`, `agent ${running ? 'running' : 'idle'}`],
+    list: () => deps.commands.list(bound),
+  }))
 
   detachers.push(tui.addInputListener((data) => {
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
@@ -227,6 +279,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     if (disposed) return
     disposed = true
     for (const detach of detachers.splice(0)) detach()
+    for (const run of commandRuns) run.abort()
     panels.disposeAll()
     tui.stop()
   }

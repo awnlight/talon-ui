@@ -24,7 +24,7 @@ export interface Context {
 }
 
 export const name = 'talon-ui'
-export const inject = ['agents', 'sessions', 'userQuestions', 'approval'] as const
+export const inject = ['agents', 'sessions', 'userQuestions', 'approval', 'commands'] as const
 
 export interface Config { sessionId?: string }
 
@@ -102,6 +102,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         terminal,
         palette: createPalette(enabled),
         userQuestions: anyCtx.userQuestions,
+        commands: anyCtx.commands,
         exit: (code) => disposeRootAndExit(ctx, code),
       })
       return () => { removeGuards(); return controller.dispose() }

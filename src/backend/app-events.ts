@@ -14,3 +14,8 @@ export type AppEvent =
   | { kind: 'tool-call'; callId: string; name: string; preview: string | undefined }
   | { kind: 'approval-asked'; id: string; toolName: string }
   | { kind: 'approval-decided'; id: string; outcome: string }
+  | { kind: 'command-run'; name: string; args: string | undefined }
+  | { kind: 'command-done'; result: 'success' | 'error'; text: string | undefined }
+  // The one AppEvent no session event translates to: UI-local feedback the
+  // durable log never carries (an unknown command, a failed execution).
+  | { kind: 'notice'; notice: Notice }
