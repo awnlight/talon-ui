@@ -44,10 +44,16 @@ export async function buildResumeCandidates(services: SessionServices, opts: { c
   const pending: SessionRecordLike[] = []
   for (const record of records) {
     const live = services.liveSession(record.header.id)
-    if (live !== undefined && services.liveTitle !== undefined) { titles.set(record.header.id, services.liveTitle(live) ?? undefined); continue }
-    const cached = services.cachedSnapshot?.(record.header)
-    if (cached !== undefined && 'title' in cached.values) { titles.set(record.header.id, cached.values.title ?? undefined); continue }
-    pending.push(record)
+    // Both title rungs run a schema parse per projection unit, so one corrupt
+    // payload must degrade ONE row, never reject the whole listing.
+    try {
+      if (live !== undefined && services.liveTitle !== undefined) { titles.set(record.header.id, services.liveTitle(live) ?? undefined); continue }
+      const cached = services.cachedSnapshot?.(record.header)
+      if (cached !== undefined && 'title' in cached.values) { titles.set(record.header.id, cached.values.title ?? undefined); continue }
+      pending.push(record)
+    } catch (cause) {
+      failures.set(record.header.id, cause instanceof Error ? cause.message : String(cause))
+    }
   }
   if (hasCacheLadder) {
     const queue = [...pending]

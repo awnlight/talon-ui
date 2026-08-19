@@ -131,6 +131,22 @@ describe('buildResumeCandidates (title fallbacks, failure isolation, ordering)',
     expect(candidate!.title).toBe('Unreadable session')
     expect(candidate!.disabledReason).toBe('session cannot be loaded: corrupt tail')
   })
+  it('isolates a throwing live or cached rung, leaving its siblings titled', async () => {
+    const services = {
+      listSessions: async () => [rec('live1', { live: true, createdAt: 300 }), rec('cached1', { createdAt: 200 }), rec('cold1', { createdAt: 100 })],
+      liveSession: (id: string) => (id === 'live1' ? { events: [{ time: 900 }] } : undefined),
+      liveTitle: () => { throw new Error('schema.parse failed for key "goal"') },
+      cachedSnapshot: (h: { id: string }) => { if (h.id === 'cached1') throw 'projection unit rejected a stored row'; return undefined },
+      coldSnapshot: async () => ({ values: { title: 'Cold title' } }),
+      readTitleSnapshots: async () => { throw new Error('batch path must not run when the cache ladder exists') },
+    }
+    const out = await buildResumeCandidates(services as never, { currentId: 'me', cwd: '/w' })
+    expect(out.map((c) => [c.id, c.title, c.disabledReason])).toEqual([
+      ['live1', 'Unreadable session', 'session cannot be loaded: schema.parse failed for key "goal"'],
+      ['cached1', 'Unreadable session', 'session cannot be loaded: projection unit rejected a stored row'],
+      ['cold1', 'Cold title', undefined],
+    ])
+  })
   it('breaks an activity tie by id, ascending', async () => {
     const services = {
       listSessions: async () => [rec('zulu', { createdAt: 500 }), rec('alpha', { createdAt: 500 })],
