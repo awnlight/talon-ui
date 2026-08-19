@@ -195,20 +195,33 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // can reject before logging anything at all: a pre-aborted signal, a failed
   // command/run append).
   const commandRuns = new Set<AbortController>()
+  // The one run dispose() must NOT abort: dsh invokes a command handler
+  // synchronously inside `commands.execute` and re-checks the signal the
+  // moment it returns. /exit's handler calls requestExit(), which from idle
+  // disposes synchronously — so aborting here would make dsh log the
+  // successful exit as `command/done {kind:'error'}`: a red notice live never
+  // paints (the listener is already detached) but replay does (Ruling 5).
+  // Only ever set across `execute`'s synchronous window.
+  let executingRun: AbortController | undefined
   const executeSlash = (line: string): void => {
     const controllerAbort = new AbortController()
     commandRuns.add(controllerAbort)
-    void Promise.resolve(deps.commands.execute(bound, line, controllerAbort.signal))
-      .then((execution) => {
-        if (disposed || execution !== undefined) return   // logged results render via durable events (Ruling 5)
-        appendLocalNotice({ text: `Unknown command: ${line.trim().split(/\s+/, 1)[0]}`, tone: 'warning' })
-      })
-      .catch((cause: unknown) => {
-        if (disposed) return
-        const detail = cause instanceof Error ? cause.message : String(cause)
-        appendLocalNotice({ text: `Command failed: ${detail}`, tone: 'error' })
-      })
-      .finally(() => commandRuns.delete(controllerAbort))
+    executingRun = controllerAbort
+    try {
+      void Promise.resolve(deps.commands.execute(bound, line, controllerAbort.signal))
+        .then((execution) => {
+          if (disposed || execution !== undefined) return   // logged results render via durable events (Ruling 5)
+          appendLocalNotice({ text: `Unknown command: ${line.trim().split(/\s+/, 1)[0]}`, tone: 'warning' })
+        })
+        .catch((cause: unknown) => {
+          if (disposed) return
+          const detail = cause instanceof Error ? cause.message : String(cause)
+          appendLocalNotice({ text: `Command failed: ${detail}`, tone: 'error' })
+        })
+        .finally(() => commandRuns.delete(controllerAbort))
+    } finally {
+      executingRun = undefined
+    }
   }
 
   composer.onSubmit = (text) => {
@@ -279,7 +292,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     if (disposed) return
     disposed = true
     for (const detach of detachers.splice(0)) detach()
-    for (const run of commandRuns) run.abort()
+    for (const run of commandRuns) if (run !== executingRun) run.abort()
     panels.disposeAll()
     tui.stop()
   }

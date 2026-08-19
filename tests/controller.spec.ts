@@ -51,18 +51,33 @@ function fakeCommandService() {
 // A commands facet that really dispatches: registrations land in `handlers`
 // and execute() runs the matching one, so a test can drive talon's own
 // handlers end-to-end from the composer (an unknown name still answers
-// undefined, exactly like the real registry).
+// undefined, exactly like the real registry). `log` mirrors what dsh's
+// CommandRuntime.execute appends to the durable session log — and, like the
+// real one, the handler runs SYNCHRONOUSLY and the signal is re-checked once
+// it returns (dsh's `withAbort` rejects an already-aborted signal before
+// looking at the handler's result), so a self-abort turns a successful
+// command into an errored `command/done`.
 function dispatchingCommandService() {
   const handlers = new Map<string, () => unknown>()
+  const log: string[] = []
   return {
     handlers,
+    log,
     register: (definition: CommandDef): (() => void) => {
       handlers.set(definition.name, () => definition.handler(undefined as never))
       return () => handlers.delete(definition.name)
     },
-    execute: vi.fn(async (_agent: unknown, line: string): Promise<unknown> => {
+    execute: vi.fn(async (_agent: unknown, line: string, signal: AbortSignal): Promise<unknown> => {
       const handler = handlers.get(line.slice(1))
-      return handler === undefined ? undefined : { commandId: 'c', result: handler() }
+      if (handler === undefined) return undefined
+      log.push(`command/run ${line.slice(1)}`)
+      const result = handler()
+      if (signal.aborted) {
+        log.push('command/done error')
+        throw new Error('This operation was aborted')
+      }
+      log.push('command/done success')
+      return { commandId: 'c', result }
     }),
   }
 }
@@ -377,6 +392,23 @@ describe('controller', () => {
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
     expect(exit).toHaveBeenCalledTimes(1)
     expect(agent.cancelled.length).toBe(1)
+    await controller.dispose()
+  })
+  it('/exit from idle logs a successful command — dispose never aborts its own run', async () => {
+    // Regression (review round 1): dispose() aborted EVERY in-flight run,
+    // including the /exit execution whose handler had just called it (the
+    // idle branch disposes synchronously, inside `commands.execute`). dsh
+    // re-checks the signal after the handler returns, so the successful exit
+    // was logged as `command/done {kind:'error'}` — a red "This operation was
+    // aborted" notice that live never paints (listener already detached) but
+    // Task 16's replay does, breaking Ruling 5's live≡replay invariant.
+    const svc = dispatchingCommandService()
+    const { terminal, exit, controller } = setup({ commands: svc })
+    await terminal.waitForFrame(0)
+    terminal.input('/exit')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    expect(svc.log).toEqual(['command/run exit', 'command/done success'])
     await controller.dispose()
   })
 })
