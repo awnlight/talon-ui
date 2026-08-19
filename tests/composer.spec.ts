@@ -132,6 +132,26 @@ describe('Composer', () => {
     expect(text).not.toContain('\x00')                // sentinel never escapes
     tui.stop()
   })
+  // The DEFAULT production menu state, not an edge case: pi-tui shows at most
+  // autocompleteMaxVisible = 5 rows (editor.js:216) and the live registry is
+  // talon's own four plus dsh-base's (compact/feedback/goal/plan/permission),
+  // so a bare '/' always pages. select-list.js:56-61 then appends the scroll
+  // row, which must carry talon's dim tone like every other secondary row.
+  it('pages a menu longer than five rows and dims the (n/total) scroll row', async () => {
+    const { term, tui, composer } = setup()
+    const names = ['compact', 'exit', 'feedback', 'goal', 'help', 'permission'] // name-sorted, as commands.list() answers
+    const { provider } = countingProvider(names)
+    composer.attachSlashCompletion(provider)
+    tui.start()
+    await term.waitForFrame(0)
+    term.input('/')
+    await vi.waitFor(() => expect(composer.editor.isShowingAutocomplete()).toBe(true))
+    const rows = composer.editor.render(60)
+    const text = rows.join('\n')
+    expect(names.filter((n) => text.includes(n))).toEqual(['compact', 'exit', 'feedback', 'goal', 'help']) // the 6th is paged out
+    expect(rows.at(-1)!.trimEnd()).toBe('\x1b[2;39m  (1/6)\x1b[22;39m')
+    tui.stop()
+  })
   it('attachSlashCompletion drives the menu, refreshCompletion re-queries it in place', async () => {
     const { term, tui, composer } = setup()
     const names = ['help']

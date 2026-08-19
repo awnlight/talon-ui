@@ -41,8 +41,8 @@ export class Composer {
         selectedPrefix: (s) => palette.accent(s),
         selectedText: (s) => palette.selected(s),
         description: (s) => palette.dim(s),
-        /* v8 ignore next 2 -- unreachable behind createSlashProvider: scrollInfo needs more items than autocompleteMaxVisible, and noMatch renders only for an EMPTY item list — the provider answers null instead, which closes the menu before any row renders (editor.js:1897-1900) */
         scrollInfo: (s) => palette.dim(s),
+        /* v8 ignore next -- unreachable behind createSlashProvider: noMatch renders only for an EMPTY item list — the provider answers null instead, which closes the menu before any row renders (editor.js:1897-1900) */
         noMatch: (s) => palette.dim(s),
       },
     }, { paddingX: 0 })
