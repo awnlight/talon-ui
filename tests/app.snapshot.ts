@@ -2,9 +2,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
+import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
+import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -30,6 +32,16 @@ const T2_COMMANDS = [
   { name: 'help', description: 'List available commands' },
   { name: 'quit', description: 'Exit talon (alias of /exit)' },
   { name: 'status', description: 'Show session status' },
+]
+
+/** Three fixed resume rows built by Task 14's own summarizer, so the golden's
+ * refusal copy comes from the disable ladder rather than a hand-typed string.
+ * Newest first (what buildResumeCandidates hands the panel), one foreign
+ * workspace and one already-live session. */
+const RESUME_CANDIDATES: ResumeCandidate[] = [
+  summarizeCandidate({ header: { id: 's-abc', createdAt: 1_755_100_000_000, cwd: '/workspace/talon-ui' }, live: false, persisted: true }, 'Fix the login flow', undefined, 'main', '/workspace/talon-ui'),
+  summarizeCandidate({ header: { id: 's-def', createdAt: 1_755_000_000_000, cwd: '/workspace/talon-ui' }, live: true, persisted: true }, undefined, undefined, 'main', '/workspace/talon-ui'),
+  summarizeCandidate({ header: { id: 's-ghi', createdAt: 1_754_900_000_000, cwd: '/workspace/api' }, live: false, persisted: true }, 'Ship the webhook', undefined, 'main', '/workspace/talon-ui'),
 ]
 
 /** Feed keystrokes one settled frame at a time — a checkpoint must never race
@@ -178,6 +190,36 @@ describe('talon snapshots', () => {
     await vi.waitFor(() => expect(terminal.snapshot()).toContain('List available commands'))
     await checkpoint('slash-autocomplete', terminal)
 
+    await controller.dispose()
+  })
+
+  it('resume-selector', async () => {
+    const terminal = new HeadlessTerminal(72, 18)
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService() })
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    // Mounted through the controller's own PanelManager (what Task 16 will
+    // do), so the golden covers the real focus/queue path, not a bare render().
+    let panel: ResumePanel | undefined
+    const picked = controller.panels.enqueue<ResumeCandidate | undefined>({
+      create: (finish) => (panel = new ResumePanel(finish, createPalette(true), (cwd) => cwd ?? 'cwd unset')),
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)   // the loading frame
+
+    panel!.setCandidates(RESUME_CANDIDATES)
+    // setCandidates paints nothing by itself — the loader's owner requests that
+    // render (Task 16 wires it). These keystrokes are that nudge, and they also
+    // park the cursor on the already-live row and make it refuse: at 72 columns
+    // the two-column row leaves 48 for the meta, so the full reason only ever
+    // fits on the error line below.
+    await type(terminal, ['\x1b[B', '\r'])
+    await checkpoint('resume-selector', terminal)
+
+    before = terminal.frames
+    terminal.input('\x1b')                // empty query: esc cancels the panel
+    await expect(picked).resolves.toBeUndefined()
+    await terminal.waitForFrame(before)
     await controller.dispose()
   })
 })

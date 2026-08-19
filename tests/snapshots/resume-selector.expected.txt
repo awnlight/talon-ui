@@ -1,0 +1,25 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @10,72
+0| <blank>
+1| "─ resume ───────────────────────────────────────────────────────────────"
+  style 0-71 dim
+2| "⌕ type to filter"
+  style 0-15 dim
+3| "this workspace /workspace/talon-ui  ⇥ all workspaces (3)"
+  style 0-33 fg-13
+  style 36-55 dim
+4| "  Fix the login flow  2025-08-13T15:46:40.000Z · persisted · s-abc"
+  style 20-65 dim
+5| "→ Untitled session    2025-08-12T12:00:00.000Z · live · persisted · s-"
+  style 0-69 inverse
+6| "↑/↓ · tab scope · enter resume · esc clear/cancel"
+  style 0-48 dim
+7| "session is already live in this runtime"
+  style 0-38 fg-1
+8| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 fg-3
+9| <blank>
+10| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+11-17| <blank>

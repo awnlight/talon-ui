@@ -10,6 +10,7 @@ export const CHECKPOINTS = [
   'question-multiselect',
   'plan-review',
   'slash-autocomplete',
+  'resume-selector',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]
