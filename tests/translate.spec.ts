@@ -6,6 +6,26 @@ describe('translateSessionEvent', () => {
     const out = translateSessionEvent({ type: 'user/message', data: { content: [{ type: 'text', text: 'hi' }] } })
     expect(out).toEqual([{ kind: 'user-message', text: 'hi' }])
   })
+  it('routes non-user sources to context cards (T2 carryover 11)', () => {
+    expect(translateSessionEvent({ type: 'user/message', data: {
+      content: [{ type: 'text', text: 'entry one\nentry two\nentry three' }],
+      source: { kind: 'skill-catalog', form: 'catalog' },
+    } })).toEqual([{ kind: 'context-card', label: 'skill-catalog', summary: undefined, lines: 3 }])
+    expect(translateSessionEvent({ type: 'user/message', data: {
+      content: [{ type: 'text', text: 'done' }],
+      source: { kind: 'subagent-settled', form: 'notice', summary: 'subagent finished' },
+    } })).toEqual([{ kind: 'context-card', label: 'subagent-settled', summary: 'subagent finished', lines: 1 }])
+  })
+  it('keeps real user prompts as user messages — including sourceless fixtures', () => {
+    expect(translateSessionEvent({ type: 'user/message', data: { content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } } }))
+      .toEqual([{ kind: 'user-message', text: 'hi' }])
+    expect(translateSessionEvent({ type: 'user/message', data: { content: [{ type: 'text', text: 'hi' }] } }))
+      .toEqual([{ kind: 'user-message', text: 'hi' }])
+  })
+  it('a context message with no text blocks reports zero lines', () => {
+    expect(translateSessionEvent({ type: 'user/message', data: { content: [], source: { kind: 'agent-instructions', form: 'instructions' } } }))
+      .toEqual([{ kind: 'context-card', label: 'agent-instructions', summary: undefined, lines: 0 }])
+  })
   it('maps text-delta chunks to stream-delta', () => {
     const out = translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'He' } } })
     expect(out).toEqual([{ kind: 'stream-delta', turn: 1, step: 2, index: 0, block: 'text', text: 'He' }])

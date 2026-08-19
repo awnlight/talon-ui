@@ -65,3 +65,16 @@ export class ApprovalAuditCell extends CachedCell {
     return [truncateToWidth(line, Math.max(1, width), '…')]
   }
 }
+
+/** One dim line per injected context message (carryover 11): `◇ context ·
+ * <label>[ · <summary>] · <n> lines`. Collapsed presentation — the body stays
+ * in the log and expansion arrives with T3's visibility cycling. */
+export class ContextCardCell extends CachedCell {
+  constructor(private readonly label: string, private readonly summary: string | undefined, private readonly lines: number, private readonly palette: Palette) { super() }
+  contentLineCount(): number { return 1 }
+  protected renderLines(width: number): string[] {
+    const summary = this.summary === undefined ? '' : ` · ${displayText(this.summary)}`
+    const line = this.palette.dim(`◇ context · ${displayText(this.label)}${summary} · ${this.lines} lines`)
+    return [truncateToWidth(line, Math.max(1, width), '…')]
+  }
+}

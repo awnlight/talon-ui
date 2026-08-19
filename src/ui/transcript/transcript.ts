@@ -5,7 +5,7 @@
 import { Container, Spacer, Text, type Component } from '@earendil-works/pi-tui'
 import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
-import { ApprovalAuditCell, NoticeCell, UserMessageCell } from './cells.js'
+import { ApprovalAuditCell, ContextCardCell, NoticeCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
@@ -44,6 +44,10 @@ export class Transcript {
       case 'user-message':
         this.spaceBeforeNewCell()
         { const c = new UserMessageCell(event.text, this.palette); this.addChild(c, c.contentLineCount()) }
+        break
+      case 'context-card':
+        this.spaceBeforeNewCell()
+        { const c = new ContextCardCell(event.label, event.summary, event.lines, this.palette); this.addChild(c, c.contentLineCount()) }
         break
       case 'stream-delta': {
         const cell = this.cell(`${event.turn}:${event.step}`)

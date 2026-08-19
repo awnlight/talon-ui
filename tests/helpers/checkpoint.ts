@@ -11,6 +11,7 @@ export const CHECKPOINTS = [
   'plan-review',
   'slash-autocomplete',
   'resume-selector',
+  'context-card',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

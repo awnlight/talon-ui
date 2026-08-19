@@ -22,8 +22,22 @@ function textOf(content: ContentBlockLike[] | undefined): string {
 export function translateSessionEvent(event: RawEvent): AppEvent[] {
   const d = event.data as Record<string, any>
   switch (event.type) {
-    case 'user/message':
-      return [{ kind: 'user-message', text: textOf(d.content) }]
+    case 'user/message': {
+      // `source.kind === 'user'` is the ONLY real typed prompt (dsh's
+      // MessageSourceMap, llm/src/message.ts:100); every other kind is
+      // injected context. An absent source keeps fixture/legacy logs on the
+      // prompt path.
+      const kind = (d.source as { kind?: string } | undefined)?.kind ?? 'user'
+      if (kind === 'user') return [{ kind: 'user-message', text: textOf(d.content) }]
+      const source = d.source as { form?: string; summary?: string }
+      const text = textOf(d.content)
+      return [{
+        kind: 'context-card',
+        label: kind,
+        summary: source.form === 'notice' ? source.summary : undefined,
+        lines: text === '' ? 0 : text.split('\n').length,
+      }]
+    }
     case 'turn/start':
       return [{ kind: 'turn-start', turn: d.turn }]
     case 'turn/end':

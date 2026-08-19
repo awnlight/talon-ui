@@ -1,0 +1,19 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @8,0
+0| "You"
+  style 0-2 bold underline
+1| "Which skills are loaded?"
+2| <blank>
+3| "◇ context · skill-catalog · 3 lines"
+  style 0-34 dim
+4| <blank>
+5| "You"
+  style 0-2 bold underline
+6| "Use executing-plans."
+7| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+8| <blank>
+9| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+10-17| <blank>

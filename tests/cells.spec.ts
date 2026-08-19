@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createPalette } from '../src/theme/palette.ts'
-import { ApprovalAuditCell, CachedCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
+import { ApprovalAuditCell, CachedCell, ContextCardCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
 
 const p = createPalette(false)
 
@@ -73,6 +73,16 @@ describe('ApprovalAuditCell', () => {
   it('neutralizes hostile tool text at the display boundary (D7.8)', () => {
     const line = new ApprovalAuditCell('bash\x1b]0;evil\x07', 'rejected', p).render(80).join('\n')
     expect(line).toContain('\\x1b]0;evil\\x07')
+  })
+})
+
+describe('ContextCardCell', () => {
+  it('ContextCardCell renders one dim collapsed line with neutralized metadata', () => {
+    const cell = new ContextCardCell('skill\x1bcatalog', 'sum\x07mary', 12, createPalette(false))
+    expect(cell.contentLineCount()).toBe(1)
+    const rows = cell.render(60)
+    expect(rows).toEqual([expect.stringContaining('◇ context · skill\\x1bcatalog · sum\\x07mary · 12 lines')])
+    expect(cell.render(60)).toBe(rows)   // width-keyed cache identity (.toBe law)
   })
 })
 

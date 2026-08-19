@@ -5,6 +5,10 @@ export type ContentBlockLike = { type: string; text?: string; [k: string]: unkno
 
 export type AppEvent =
   | { kind: 'user-message'; text: string }
+  // Context injected as a user-role message by something other than the user
+  // (skill catalogs, agent instructions, subagent notices): same durable event
+  // type, different `source.kind` — never rendered as 'You' (carryover 11).
+  | { kind: 'context-card'; label: string; summary: string | undefined; lines: number }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }
