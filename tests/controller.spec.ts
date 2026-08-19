@@ -411,4 +411,42 @@ describe('controller', () => {
     expect(svc.log).toEqual(['command/run exit', 'command/done success'])
     await controller.dispose()
   })
+  it('the slash menu lists whatever commands.list() answers at query time', async () => {
+    const registry = [{ name: 'help', description: 'List available commands' }]
+    const { terminal, controller } = setup({ commands: { list: () => registry } })
+    await terminal.waitForFrame(0)
+    terminal.input('/')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('List available commands'))
+    await controller.dispose()
+  })
+  it('commands/change re-queries a visible menu instead of accepting into it', async () => {
+    // The provider reads the registry through a closure (Ruling 4), so a new
+    // command needs no provider rebuild — only a re-query of the open menu.
+    const registry = [{ name: 'help', description: 'List available commands' }]
+    const { ctx, terminal, controller } = setup({ commands: { list: () => registry } })
+    await terminal.waitForFrame(0)
+    terminal.input('/')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('List available commands'))
+    registry.push({ name: 'status', description: 'Show session status' })
+    ctx.emit('commands/change')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Show session status'))
+    expect(terminal.snapshot()).toContain('| "/"') // the composer still holds a bare slash: nothing was accepted
+    await controller.dispose()
+  })
+  it('Enter on a highlighted completion applies it and falls through to submit', async () => {
+    // pi-tui applies the completion and then keeps going into its submit
+    // branch for a '/'-prefixed prefix (editor.js:564), so accepting a command
+    // RUNS it. applyCompletion's trailing space never reaches dsh:
+    // submitValue() trims the line first (editor.js:1070).
+    const registry = [{ name: 'status', description: 'Show session status' }]
+    const { terminal, commands, agent, controller } = setup({ commands: { list: () => registry } })
+    await terminal.waitForFrame(0)
+    terminal.input('/st')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Show session status'))
+    terminal.input('\r')
+    await vi.waitFor(() => expect(commands.execute).toHaveBeenCalledOnce())
+    expect(commands.execute.mock.calls[0]![1]).toBe('/status')
+    expect(agent.followups.length).toBe(0)
+    await controller.dispose()
+  })
 })

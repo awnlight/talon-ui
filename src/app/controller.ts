@@ -12,6 +12,7 @@ import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
+import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
@@ -261,6 +262,12 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     statusLines: () => [`session ${bound.id}`, `workspace ${process.cwd()}`, `agent ${running ? 'running' : 'idle'}`],
     list: () => deps.commands.list(bound),
   }))
+
+  // Slash discovery: the provider reads the registry through this closure, so
+  // it needs no rebuild when commands come and go (Ruling 4) — an already-open
+  // menu just gets re-queried.
+  composer.attachSlashCompletion(createSlashProvider(() => deps.commands.list(bound)))
+  detachers.push(ctx.on('commands/change', () => composer.refreshCompletion()))
 
   detachers.push(tui.addInputListener((data) => {
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)

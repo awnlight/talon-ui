@@ -4,7 +4,7 @@ import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -17,9 +17,20 @@ function questionService() {
   }
 }
 
-/** No checkpoint drives slash commands (see tests/controller.spec.ts) — a
- * no-op registry stub satisfies ControllerDeps. */
+/** No checkpoint EXECUTES a slash command (see tests/controller.spec.ts) — a
+ * no-op registry stub satisfies ControllerDeps. `list` is the one member a
+ * checkpoint drives: it feeds the slash-autocomplete menu below. */
 const commandService = () => ({ register: () => () => {}, list: () => [], execute: async () => undefined })
+
+/** What dsh's `commands.list(agent)` answers once talon has registered its T2
+ * set: name-sorted CommandDescriptors, descriptions verbatim from
+ * src/backend/commands.ts. */
+const T2_COMMANDS = [
+  { name: 'exit', description: 'Exit talon' },
+  { name: 'help', description: 'List available commands' },
+  { name: 'quit', description: 'Exit talon (alias of /exit)' },
+  { name: 'status', description: 'Show session status' },
+]
 
 /** Feed keystrokes one settled frame at a time — a checkpoint must never race
  * a frame still in flight. */
@@ -151,6 +162,22 @@ describe('talon snapshots', () => {
     // plan-mode narrows on (selected === [approve], no custom key).
     await type(terminal, ['\r'])
     await expect(outcome).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Approve'] }] })
+    await controller.dispose()
+  })
+
+  it('slash-autocomplete', async () => {
+    const terminal = new HeadlessTerminal(72, 18)
+    const commands = { ...commandService(), list: () => T2_COMMANDS }
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    terminal.input('/')
+    await terminal.waitForFrame(before)   // the keystroke frame (menu query still in flight)
+    // The menu arrives one async provider round-trip later; the frame carrying
+    // it is the settled one — nothing else is scheduled after it.
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('List available commands'))
+    await checkpoint('slash-autocomplete', terminal)
+
     await controller.dispose()
   })
 })

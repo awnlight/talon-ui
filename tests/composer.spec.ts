@@ -3,6 +3,7 @@ import { Editor, TuiMainScreen } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { Composer } from '../src/ui/composer/composer.ts'
+import { createSlashProvider } from '../src/ui/composer/slash-provider.ts'
 
 function setup() {
   const term = new HeadlessTerminal(60, 12)
@@ -12,6 +13,17 @@ function setup() {
   tui.addChild(composer.container)
   tui.setFocus(composer.editor)
   return { term, tui, composer }
+}
+
+/** The real provider over a MUTABLE name list plus a query counter: a refresh
+ * nudge's whole observable job is to make pi-tui ask the closure again. */
+function countingProvider(names: string[]) {
+  const state = { queries: 0 }
+  const provider = createSlashProvider(() => {
+    state.queries += 1
+    return names.map((name) => ({ name, description: `the ${name} command` }))
+  })
+  return { provider, state }
 }
 
 describe('Composer', () => {
@@ -119,5 +131,59 @@ describe('Composer', () => {
     expect(rows.some((r) => /─{10,}/.test(r))).toBe(false) // no border row leaked into the middle
     expect(text).not.toContain('\x00')                // sentinel never escapes
     tui.stop()
+  })
+  it('attachSlashCompletion drives the menu, refreshCompletion re-queries it in place', async () => {
+    const { term, tui, composer } = setup()
+    const names = ['help']
+    const { provider, state } = countingProvider(names)
+    composer.attachSlashCompletion(provider)
+    tui.start()
+    await term.waitForFrame(0)
+    term.input('/')
+    await vi.waitFor(() => expect(composer.editor.isShowingAutocomplete()).toBe(true))
+    expect(composer.editor.render(60).join('\n')).toContain('help')
+
+    names.push('status') // dsh registered another command under the open menu
+    const seen = state.queries
+    composer.refreshCompletion()
+    await vi.waitFor(() => expect(state.queries).toBeGreaterThan(seen))
+    await vi.waitFor(() => expect(composer.editor.render(60).join('\n')).toContain('status'))
+    expect(composer.editor.isShowingAutocomplete()).toBe(true)
+    // The nudge must not ACCEPT anything: a Tab nudge would have rewritten the
+    // line to '/help ' and closed the menu (pi-tui editor.js:540-554).
+    expect(composer.editor.getText()).toBe('/')
+    expect(composer.editor.getCursor()).toEqual({ line: 0, col: 1 })
+    tui.stop()
+  })
+  it('refreshCompletion skips the nudge when the cursor is not at the end of the text', async () => {
+    const { term, tui, composer } = setup()
+    const names = ['help']
+    const { provider, state } = countingProvider(names)
+    composer.attachSlashCompletion(provider)
+    tui.start()
+    await term.waitForFrame(0)
+    term.input('/')
+    term.input('h')
+    await vi.waitFor(() => expect(composer.editor.isShowingAutocomplete()).toBe(true))
+    term.input('\x1b[D') // left: the menu survives (prefix '/'), the cursor is now mid-line
+    await vi.waitFor(() => expect(composer.editor.getCursor()).toEqual({ line: 0, col: 1 }))
+    expect(composer.editor.isShowingAutocomplete()).toBe(true)
+
+    names.push('status')
+    const seen = state.queries
+    composer.refreshCompletion()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(state.queries).toBe(seen)                              // no re-query…
+    expect(composer.editor.getCursor()).toEqual({ line: 0, col: 1 }) // …and no cursor drift
+    expect(composer.editor.getText()).toBe('/h')
+    tui.stop()
+  })
+  it('refreshCompletion does nothing while no menu is showing', async () => {
+    const { composer } = setup()
+    const { provider, state } = countingProvider(['help'])
+    composer.attachSlashCompletion(provider)
+    composer.refreshCompletion()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(state.queries).toBe(0)
   })
 })
