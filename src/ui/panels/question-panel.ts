@@ -60,6 +60,10 @@ export class QuestionPanel implements Component {
   set focused(value: boolean) { this.input.focused = value }
   private get question(): AskUserQuestionItem { return this.request.questions[this.index]! }
   private get options(): { label: string; description?: string }[] { return this.question.options ?? [] }
+  /** The approving label when this question IS a plan review (spec §3.4); an
+   * unrecognized intent kind renders as a generic question — an intent changes
+   * presentation only, never the wire shape. */
+  private get planReview(): string | undefined { const i = this.question.intent; return i !== undefined && i.kind === 'plan-review' ? i.approve : undefined }
 
   handleInput(data: string): void {
     // Paging is checked BEFORE the mode dispatch: in custom mode the Input
@@ -146,7 +150,7 @@ export class QuestionPanel implements Component {
     const compacted = compactHeader(header.map((row) => row.text), Math.max(1, available - floor), this.headerPage)
     this.headerPage = compacted.page
     const budget = Math.max(floor, available - compacted.rows.length)
-    const rows: string[] = ['', panelRule('question', safe, p)]
+    const rows: string[] = ['', panelRule(this.planReview !== undefined ? 'plan review' : 'question', safe, p)]
     rows.push(...compacted.rows.map((text, i) => {
       // Past the windowed rows sits compactHeader's own status row — dim, and
       // the one header row long enough to need truncating. It is appended
@@ -202,10 +206,13 @@ export class QuestionPanel implements Component {
     const mark = this.question.multiSelect ? (this.selected.has(i) ? '[x] ' : '[ ] ') : ''
     const prefix = ` ${cursor} ${i + 1}. ${mark}`
     const indent = ' '.repeat(prefix.length)
-    const labelLines = wrapPlain(displayText(option.label), Math.max(1, width - prefix.length))
+    // A plan review's approving option is the primary action: marked `▸ ` and
+    // toned success, except on the cursor row where cursor styling wins.
+    const primary = this.planReview === option.label
+    const labelLines = wrapPlain(`${primary ? '▸ ' : ''}${displayText(option.label)}`, Math.max(1, width - prefix.length))
     const rows = labelLines.map((line, n) => {
       const composed = (n === 0 ? prefix : indent) + line
-      return i === this.cursor ? p.bold(p.accent(composed)) : composed
+      return i === this.cursor ? p.bold(p.accent(composed)) : (primary ? p.success(composed) : composed)
     })
     if (option.description !== undefined) {
       rows.push(...wrapPlain(displayText(option.description), Math.max(1, width - indent.length)).map((l) => p.dim(indent + l)))

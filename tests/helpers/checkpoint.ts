@@ -7,6 +7,8 @@ import type { HeadlessTerminal } from '../../src/testing/headless-terminal.ts'
 export const CHECKPOINTS = [
   'conversation-roundtrip',
   'approval-panel',
+  'question-multiselect',
+  'plan-review',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

@@ -254,3 +254,40 @@ describe('QuestionPanel pagination (two-level rule, spec §4.4)', () => {
     for (const row of panel.render(20)) expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(20)
   })
 })
+
+describe('plan-review intent (spec §3.4)', () => {
+  const planQ = () => q({
+    header: 'Plan review',
+    question: 'Approve this plan and leave plan mode?',
+    detail: '# The plan\n1. do things',
+    options: [{ label: 'Approve' }, { label: 'Keep planning' }],
+    intent: { kind: 'plan-review', approve: 'Approve' },
+  })
+  it('renders the plan-review rule and highlights the approve option as primary', () => {
+    const { panel } = mountQuestions([planQ()])
+    const text = panel.render(60).join('\n')
+    expect(text).toContain('─ plan review ')
+    expect(text).toContain('▸ Approve')
+    expect(text).not.toContain('▸ Keep planning')
+  })
+  it('approve answers exactly { selected: [approve] } with no custom key', () => {
+    const { panel, answers } = mountQuestions([planQ()])
+    panel.handleInput!('\r')                                   // cursor starts on Approve
+    const item = (answers[0] as { answers: Record<string, unknown>[] }).answers[0]!
+    expect(item).toEqual({ id: 'q1', selected: ['Approve'] })
+    expect('custom' in item).toBe(false)
+  })
+  it('unknown intent kinds fall back to the generic panel', () => {
+    const { panel } = mountQuestions([q({ intent: { kind: 'future-thing', approve: 'x' } as never })])
+    expect(panel.render(60).join('\n')).toContain('─ question ')
+  })
+  // Coverage-closing addition beyond the brief's 3 pinned tests above: none of
+  // them renders the approve row while the cursor sits elsewhere — the only
+  // state where the success tone applies (cursor styling wins on its own row).
+  it('tones the approve row success once the cursor sits on another option', () => {
+    const { panel } = mountQuestions([planQ()], { colors: true })
+    panel.handleInput!('\x1b[B')                               // cursor → Keep planning
+    const row = panel.render(60).find((r) => r.includes('▸ Approve'))!
+    expect(row).toBe('\x1b[32m   1. ▸ Approve\x1b[39m')
+  })
+})

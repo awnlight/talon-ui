@@ -1,0 +1,25 @@
+terminal 72x24 buffer=normal length=24 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @13,72
+0| <blank>
+1| "─ question ─────────────────────────────────────────────────────────────"
+  style 0-71 dim
+2| "Question 1/1 (1 unanswered) · Checks"
+  style 0-35 dim
+3| "Which checks should run before the push?"
+4| <blank>
+5| " › 1. [x] Types"
+  style 0-14 fg-13 bold
+6| "          tsc --noEmit"
+  style 0-21 dim
+7| "   2. [ ] Tests"
+8| "   3. [ ] Lint"
+9| <blank>
+10| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
+  style 0-62 dim
+11| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 fg-3
+12| <blank>
+13| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+14-23| <blank>

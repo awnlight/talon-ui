@@ -4,8 +4,28 @@ import { createPalette } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review'] as const
 afterAll(() => expectObserved(OWNED))
+
+/** Captures the registered provider so a checkpoint can drive a real ask()
+ * through the controller's QuestionPanel (mirrors tests/questions.spec.ts). */
+function questionService() {
+  let provider: { ask(req: unknown): Promise<unknown> } | undefined
+  return {
+    get provider() { return provider },
+    registerProvider(p: { ask(req: unknown): Promise<unknown> }) { provider = p; return () => { provider = undefined } },
+  }
+}
+
+/** Feed keystrokes one settled frame at a time — a checkpoint must never race
+ * a frame still in flight. */
+async function type(terminal: HeadlessTerminal, keys: string[]): Promise<void> {
+  for (const key of keys) {
+    const before = terminal.frames
+    terminal.input(key)
+    await terminal.waitForFrame(before)
+  }
+}
 
 describe('talon snapshots', () => {
   it('conversation-roundtrip', async () => {
@@ -74,6 +94,59 @@ describe('talon snapshots', () => {
     await terminal.waitForFrame(before)
     expect(terminal.snapshot()).toContain('◆ approval · bash · allowed once')
 
+    await controller.dispose()
+  })
+
+  // The two question checkpoints drive the panel entirely through the
+  // questions provider, so their ctx never dispatches an event — `on` alone
+  // (returning a detacher) is the whole surface the controller uses. 24 rows
+  // gives the panel enough height that the header pager stays idle, so each
+  // golden shows the whole question.
+  const quietCtx = () => ({ on: () => () => {} })
+  const idleAgent = () => ({ id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve() })
+
+  it('question-multiselect', async () => {
+    const terminal = new HeadlessTerminal(72, 24)
+    const userQuestions = questionService()
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    const outcome = userQuestions.provider!.ask({ questions: [{
+      id: 'q1', header: 'Checks', question: 'Which checks should run before the push?',
+      options: [{ label: 'Types', description: 'tsc --noEmit' }, { label: 'Tests' }, { label: 'Lint' }],
+      multiSelect: true,
+    }] })
+    await terminal.waitForFrame(before)
+    // Check one option, then leave a custom draft behind in the Input: Esc
+    // returns to options mode (marks visible) and keeps the draft, which the
+    // merged answer below proves survived.
+    await type(terminal, [' ', '\t', ...'smoke run', '\x1b'])
+    await checkpoint('question-multiselect', terminal)
+
+    await type(terminal, ['\r']) // answer it, so dispose() finds no open panel
+    await expect(outcome).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Types'], custom: 'smoke run' }] })
+    await controller.dispose()
+  })
+
+  it('plan-review', async () => {
+    const terminal = new HeadlessTerminal(72, 24)
+    const userQuestions = questionService()
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    const outcome = userQuestions.provider!.ask({ questions: [{
+      id: 'q1', header: 'Plan review', question: 'Approve this plan and leave plan mode?',
+      detail: '# The plan\n1. do things',
+      options: [{ label: 'Approve' }, { label: 'Keep planning' }],
+      intent: { kind: 'plan-review', approve: 'Approve' },
+    }] })
+    await terminal.waitForFrame(before)
+    await checkpoint('plan-review', terminal)
+
+    // Enter on the landing cursor is the approval — the exact wire shape
+    // plan-mode narrows on (selected === [approve], no custom key).
+    await type(terminal, ['\r'])
+    await expect(outcome).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Approve'] }] })
     await controller.dispose()
   })
 })
