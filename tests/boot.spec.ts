@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as boot from '../src/boot.ts'
-import { apply } from '../src/boot.ts'
+import { apply, createRootAgent } from '../src/boot.ts'
 
 describe('talon-boot plugin shape', () => {
   it('exports Cordis plugin surface without default export', () => {
@@ -67,6 +67,16 @@ describe('talon-boot run()', () => {
     expect(ctx.agents.create).not.toHaveBeenCalled()
     release()
     await vi.waitFor(() => expect(ctx.agents.create).toHaveBeenCalledOnce())
+  })
+  it('createRootAgent reuses a live root, and hands back the handle it creates', async () => {
+    // What /clear calls (T2 Ruling 10): the same composition the boot runs,
+    // but the caller needs the agent back to bind the UI to it.
+    const ctx = bootCtx({ roots: [{ id: 'pinned' }] })
+    expect(await createRootAgent(ctx as never, 'pinned')).toEqual({ agent: { id: 'pinned' } })
+    expect(ctx.agents.create).not.toHaveBeenCalled()
+    const handle = await createRootAgent(ctx as never, 'fresh')
+    expect(handle.agent.id).toBe('fresh')
+    expect(ctx.agents.create).toHaveBeenCalledOnce()
   })
   it('fails loud (stderr + exit 1) when agentDefaultModel is missing', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)

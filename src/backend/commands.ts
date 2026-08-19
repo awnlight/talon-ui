@@ -28,3 +28,29 @@ export function registerTalonCommands(
   ]
   return () => { for (const dispose of disposers.splice(0)) dispose() }
 }
+
+export interface SessionCommandDeps {
+  openResume(): void
+  newSession(): void
+}
+
+/** The session-switching pair (spec D8/§3.5). Both handlers only START the
+ * controller's async flow and return success immediately: what the user cares
+ * about (the selector, the rebind, every refusal) arrives as a local notice,
+ * so `command/done` stays noise-free and replay-identical. */
+export function registerSessionCommands(
+  commands: { register(def: CommandDefinition): () => void },
+  deps: SessionCommandDeps,
+): () => void {
+  const disposers = [
+    commands.register({
+      name: 'resume', description: 'Resume a previous session',
+      handler: () => { deps.openResume(); return { kind: 'success' } },
+    }),
+    commands.register({
+      name: 'clear', description: 'Start a fresh session',
+      handler: () => { deps.newSession(); return { kind: 'success' } },
+    }),
+  ]
+  return () => { for (const dispose of disposers.splice(0)) dispose() }
+}

@@ -1,14 +1,15 @@
 /** One mounted talon channel: TuiMainScreen + Transcript + Composer +
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
-import { matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
+import { Container, matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import type { CommandDefinition, CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
-import { registerTalonCommands } from '../backend/commands.js'
+import { registerSessionCommands, registerTalonCommands } from '../backend/commands.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
+import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import type { Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
@@ -16,7 +17,28 @@ import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
+import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { Transcript } from '../ui/transcript/transcript.js'
+
+/** The slice of dsh's `Agent` the UI drives. Named (Task 16) because the
+ * in-process rebind takes one as an argument. */
+export interface AgentFacet {
+  id: string
+  status: 'idle' | 'running'
+  session: unknown
+  cancel(cause: { kind: 'user' }): void
+  followup(message: unknown): void
+  steer(message: unknown): void
+  whenIdle(): Promise<void>
+}
+
+/** Minimal facet of dsh's `ctx.sessionQuery` (spec §3.6) — the listing, one
+ * full log for the preflight, and the batch title rung. */
+interface SessionQueryFacet {
+  listSessions(signal?: AbortSignal): Promise<SessionRecordLike[]>
+  readSession(id: string): Promise<{ events: readonly { type: string; data: unknown }[] }>
+  readTitleSnapshots: SessionServices['readTitleSnapshots']
+}
 
 export interface ControllerDeps {
   /** The plugin's ROOT ctx — NOT a per-agent scope (root-ctx flip, T2 Task
@@ -26,15 +48,7 @@ export interface ControllerDeps {
    * below (`session !== bound.session`, `payload.agent !== bound`) are the
    * ONLY filter keeping other agents' events out — required for D8. */
   ctx: { on(event: string, fn: (...args: any[]) => void): () => void }
-  agent: {
-    id: string
-    status: 'idle' | 'running'
-    session: unknown
-    cancel(cause: { kind: 'user' }): void
-    followup(message: unknown): void
-    steer(message: unknown): void
-    whenIdle(): Promise<void>
-  }
+  agent: AgentFacet
   terminal: Terminal
   palette: Palette
   /** Minimal facet of dsh's `ctx.userQuestions` (spec §3.4) — just enough for
@@ -48,11 +62,36 @@ export interface ControllerDeps {
     list(agent: unknown): readonly CommandDescriptor[]
     execute(agent: unknown, line: string, signal: AbortSignal): Promise<unknown>
   }
+  /** Minimal facet of dsh's `ctx.agents` (spec §3.6): in-process resume keeps
+   * the old agent alive and only moves this UI's binding (Ruling 8). */
+  agents: { resume(opts: { resumeSessionId: string }): Promise<{ agent: AgentFacet }> }
+  /** talon-boot's `createRootAgent` bound to the host ctx — `/clear` mints a
+   * fresh session through the boot's own composition (Ruling 10). */
+  createRootAgent(): Promise<{ agent: AgentFacet }>
+  /** Services the session flows read. `sessionQuery` and the two projection
+   * services are `ctx.get` optionals (spec §3.1): without the first, `/resume`
+   * says so; without the others, the title ladder falls back to one
+   * `readTitleSnapshots` batch. `llm` rides `inject`, so it is always there. */
+  services: {
+    sessionQuery?: SessionQueryFacet
+    sessions: { get(id: string): { events: readonly { time?: number }[] } | undefined }
+    projections?: { snapshot(session: unknown): { values: { title?: string | null } } }
+    projectionCache?: {
+      cachedSnapshot(header: SessionRecordLike['header']): { values: { title?: string | null } } | undefined
+      coldSnapshot(id: string, signal?: AbortSignal): Promise<{ values: { title?: string | null } }>
+    }
+    llm: { listProviders(): { id: string }[] }
+  }
   exit(code: number): void
 }
 
 const HINT_IDLE = 'enter send · shift+enter newline · ctrl+c exit'
 const HINT_RUNNING = 'esc interrupt · ctrl+c interrupt'
+const RESUME_RUNNING = 'Resume is not available while a turn is running.'
+const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
+const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
+/** What the selector shows for a session whose log recorded no workspace. */
+const WORKSPACE_UNSET = 'cwd unset'
 
 /**
  * Build a value shaped like dsh's real `UserMessage` (id/role/content/source)
@@ -86,11 +125,16 @@ function toUserMessage(text: string) {
   }
 }
 
-export function createController(deps: ControllerDeps): { dispose(): Promise<void>; panels: PanelManager } {
+export function createController(deps: ControllerDeps): { dispose(): Promise<void>; panels: PanelManager; bindAgent(next: AgentFacet): void } {
   const { ctx, agent, terminal, palette, exit } = deps
   const tui = new TuiMainScreen(terminal)
   tui.setClearOnShrink(false) // spec D10: shrink clears via normal diff, never a scrollback-wiping full redraw
-  const transcript = new Transcript(palette)
+  // The transcript hangs in a slot rather than directly off the TUI: a rebind
+  // (D8) swaps a whole new Transcript in while keeping render position 0
+  // (container children order IS the render order).
+  const transcriptSlot = new Container()
+  let transcript = new Transcript(palette)
+  transcriptSlot.addChild(transcript.container)
   const composer = new Composer(tui, palette)
   composer.setHint(HINT_IDLE)
 
@@ -111,8 +155,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     },
   })
   const hasPanel = (): boolean => panels.active !== undefined
+  /** The composer's whole derived look: a panel outranks a running turn. */
+  const syncComposer = (): void => {
+    composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
+    composer.setHint(running ? HINT_RUNNING : HINT_IDLE)
+  }
 
-  tui.addChild(transcript.container)
+  tui.addChild(transcriptSlot)
   tui.addChild(panels.container)
   tui.addChild(composer.container)
   tui.setFocus(composer.editor)
@@ -136,10 +185,30 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   detachers.push(ctx.on('agent/status', (payload: { agent: unknown; status: 'idle' | 'running' }) => {
     if (payload.agent !== bound || disposed) return
     running = payload.status === 'running'
-    composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
-    composer.setHint(running ? HINT_RUNNING : HINT_IDLE)
+    syncComposer()
     tui.requestRender()
   }))
+
+  /** Move the whole UI onto another agent in place (spec D8, Ruling 8): the
+   * root-ctx listeners keep firing, so only the identity they filter on, the
+   * transcript they paint into, and the per-turn scratch state change. The
+   * old agent stays alive and simply stops being rendered. */
+  function bindAgent(next: AgentFacet): void {
+    bound = next
+    running = next.status === 'running'
+    pendingCalls.clear()
+    transcript = new Transcript(palette)
+    transcriptSlot.clear()
+    transcriptSlot.addChild(transcript.container)
+    // Replay from the LIVE session (Ruling 8): whatever agents.resume() loaded,
+    // through the same translation live events take — so a resumed screen and
+    // the screen that produced it are the same screen.
+    for (const event of (next.session as { events?: readonly { type: string; data: unknown; time?: number }[] }).events ?? []) {
+      for (const appEvent of translateSessionEvent(event)) transcript.apply(appEvent)
+    }
+    syncComposer()
+    tui.requestRender()
+  }
 
   // The approval/request waterfall responder (spec D9): claims only this
   // controller's bound agent's requests by identity, presents them through
@@ -147,7 +216,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // the panel is showing force-closes it 'cancelled'; teardown rejects (the
   // real ApprovalService normalizes a rejection to 'unavailable' — fail
   // closed, Ruling 7).
-  detachers.push(attachApprovalResponder(ctx as never, {
+  detachers.push(attachApprovalResponder(ctx, {
     isBound: (a) => a === bound,
     present: (req) => panels.enqueue<ApprovalOutcome>({
       create: (finish) => new ApprovalPanel({
@@ -231,8 +300,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     if (text.startsWith('/')) executeSlash(text)
     else {
       const message = toUserMessage(text)
-      if (running) agent.steer(message)
-      else agent.followup(message)
+      // `bound`, never the constructor's `agent`: after a D8 rebind the
+      // composer must talk to the session on screen.
+      if (running) bound.steer(message)
+      else bound.followup(message)
     }
     composer.editor.setText('')
     composer.editor.addToHistory(text)
@@ -246,10 +317,90 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // /exit and /quit reach this while a turn is running (the key bindings
     // never do): cancel first, then tear down once the agent is idle.
     if (running) {
-      agent.cancel({ kind: 'user' })
-      void agent.whenIdle().then(() => { void dispose().then(() => exit(0)) })
+      bound.cancel({ kind: 'user' })
+      void bound.whenIdle().then(() => { void dispose().then(() => exit(0)) })
     } else {
       void dispose().then(() => exit(0))
+    }
+  }
+
+  const failureText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
+  const resumeFailed = (cause: unknown): void => appendLocalNotice({ text: `Resume failed: ${failureText(cause)}`, tone: 'error' })
+
+  /** Task 14's title ladder assembled from whatever dsh actually mounted. The
+   * projection members must stay ABSENT when their services are: their
+   * presence is what picks the per-record cold ladder over the one batch. */
+  const candidateServices = (query: SessionQueryFacet): SessionServices => {
+    const { sessions, projections, projectionCache } = deps.services
+    return {
+      listSessions: (signal) => query.listSessions(signal),
+      liveSession: (id) => sessions.get(id),
+      ...(projections === undefined ? {} : { liveTitle: (session: unknown) => projections.snapshot(session).values.title }),
+      ...(projectionCache === undefined ? {} : {
+        cachedSnapshot: (header: SessionRecordLike['header']) => projectionCache.cachedSnapshot(header),
+        coldSnapshot: (id: string, signal?: AbortSignal) => projectionCache.coldSnapshot(id, signal),
+      }),
+      readTitleSnapshots: (ids, signal) => query.readTitleSnapshots(ids, signal),
+    }
+  }
+
+  const preflightFacets = (query: SessionQueryFacet): PreflightServices => ({
+    agentStatus: () => bound.status,
+    listSessions: () => query.listSessions(),
+    readSession: (id) => query.readSession(id),
+    listProviders: () => deps.services.llm.listProviders(),
+  })
+
+  /** D8's exact order: preflight → `process.chdir` BEFORE anything is torn
+   * down (a refusal or a failed chdir leaves the whole UI as it was) → resume
+   * → rebind → one local notice. */
+  const resumeInto = async (query: SessionQueryFacet, picked: Promise<ResumeCandidate | undefined>): Promise<void> => {
+    try {
+      const candidate = await picked
+      if (candidate === undefined) return // cancelled, or closed by a failed candidate build
+      const target = await preflightResume(preflightFacets(query), candidate.id, { currentId: bound.id, cwd: process.cwd() })
+      process.chdir(target.cwd)
+      const handle = await deps.agents.resume({ resumeSessionId: target.id })
+      bindAgent(handle.agent)
+      appendLocalNotice({ text: `Resumed session ${target.id} · ${target.cwd}`, tone: 'info' })
+    } catch (cause) {
+      resumeFailed(cause)
+    }
+  }
+
+  const openResume = (): void => {
+    if (running) { appendLocalNotice({ text: RESUME_RUNNING, tone: 'warning' }); return }
+    const query = deps.services.sessionQuery
+    if (query === undefined) { appendLocalNotice({ text: RESUME_UNMOUNTED, tone: 'error' }); return }
+    // The panel mounts in its own loading state and fills asynchronously;
+    // `settle` is the manager's finish, so a failed fill can close it too.
+    let settle!: (picked: ResumeCandidate | undefined) => void
+    const panel = new ResumePanel((picked) => settle(picked), palette, (cwd) => cwd ?? WORKSPACE_UNSET)
+    void resumeInto(query, panels.enqueue<ResumeCandidate | undefined>({
+      create: (finish) => { settle = finish; return panel },
+      forced: () => ({ outcome: undefined }),
+    }))
+    void (async () => {
+      try {
+        panel.setCandidates(await buildResumeCandidates(candidateServices(query), { currentId: bound.id, cwd: process.cwd() }))
+        tui.requestRender()
+      } catch (cause) {
+        settle(undefined)
+        resumeFailed(cause)
+      }
+    })()
+  }
+
+  /** `/clear` (Ruling 10): a real fresh session through talon-boot's own
+   * composition, bound by the same machinery resume uses. */
+  const newSession = async (): Promise<void> => {
+    if (running) { appendLocalNotice({ text: CLEAR_RUNNING, tone: 'warning' }); return }
+    try {
+      const { agent: fresh } = await deps.createRootAgent()
+      bindAgent(fresh)
+      appendLocalNotice({ text: `Started a fresh session ${fresh.id}`, tone: 'info' })
+    } catch (cause) {
+      appendLocalNotice({ text: `New session failed: ${failureText(cause)}`, tone: 'error' })
     }
   }
 
@@ -262,6 +413,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     statusLines: () => [`session ${bound.id}`, `workspace ${process.cwd()}`, `agent ${running ? 'running' : 'idle'}`],
     list: () => deps.commands.list(bound),
   }))
+  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession }))
 
   // Slash discovery: the provider reads the registry through this closure, so
   // it needs no rebuild when commands come and go (Ruling 4) — an already-open
@@ -272,7 +424,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   detachers.push(tui.addInputListener((data) => {
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
     if (matchesKey(data, 'ctrl+c')) {
-      if (running) { agent.cancel({ kind: 'user' }); return { consume: true } }
+      if (running) { bound.cancel({ kind: 'user' }); return { consume: true } }
       if (composer.editor.getText() !== '') { composer.editor.setText(''); tui.requestRender(); return { consume: true } }
       requestExit()
       return { consume: true }
@@ -284,7 +436,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // keys, alt+letter, home/end, F-keys, and bracketed-paste content (all
     // \x1b-prefixed) do NOT match; only a bare ESC byte or a full CSI-u/
     // modifyOtherKeys escape encoding does. No prefix-match guard needed.
-    if (matchesKey(data, 'escape') && running) { agent.cancel({ kind: 'user' }); return { consume: true } }
+    if (matchesKey(data, 'escape') && running) { bound.cancel({ kind: 'user' }); return { consume: true } }
     if (matchesKey(data, 'ctrl+l')) { tui.requestRender(true); return { consume: true } }
     if (matchesKey(data, 'ctrl+d') && composer.editor.getText() === '') {
       if (!running) requestExit()
@@ -304,5 +456,5 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     tui.stop()
   }
 
-  return { dispose, panels }
+  return { dispose, panels, bindAgent }
 }

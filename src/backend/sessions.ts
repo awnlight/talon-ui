@@ -9,6 +9,14 @@ export interface ResumeCandidate {
   id: string; title: string; lastActivityAt: number; cwd: string | undefined
   live: boolean; persisted: boolean; currentWorkspace: boolean; disabledReason?: string
 }
+/** What the resume preflight reads — the live agent's status, the session
+ * listing, the target's full log, and the currently routable providers. */
+export interface PreflightServices {
+  agentStatus(): 'idle' | 'running'
+  listSessions(): Promise<SessionRecordLike[]>
+  readSession(id: string): Promise<{ events: readonly { type: string; data: unknown }[] }>
+  listProviders(): { id: string }[]
+}
 export interface SessionServices {
   listSessions(signal?: AbortSignal): Promise<SessionRecordLike[]>
   liveSession(id: string): { events: readonly { time?: number }[] } | undefined      // ctx.sessions.get
@@ -82,4 +90,61 @@ export async function buildResumeCandidates(services: SessionServices, opts: { c
   })
   candidates.sort((a, b) => b.lastActivityAt - a.lastActivityAt || a.id.localeCompare(b.id))
   return candidates
+}
+
+/** The route a persisted session last ran on: its newest `request/header`
+ * snapshot (`data.header.config`, dsh session/types.ts:304 + llm
+ * call-config.ts:23-25), else its newest assistant message's provenance
+ * (`data.message.source`, session/types.ts:273 + llm message.ts:8-12).
+ * Undefined when the log names neither — nothing to validate. */
+export function resumeRoute(events: readonly { type: string; data: unknown }[]): { provider: string; model: string } | undefined {
+  let header: { provider: string; model: string } | undefined
+  let message: { provider: string; model: string } | undefined
+  for (const event of events) {
+    if (event.type === 'request/header') {
+      const { config } = (event.data as { header: { config: { provider: string; model: string } } }).header
+      header = { provider: config.provider, model: config.model }
+    } else if (event.type === 'assistant/message') {
+      const { source } = (event.data as { message: { source: { provider: string; model: string } } }).message
+      message = { provider: source.provider, model: source.model }
+    }
+  }
+  return header ?? message
+}
+
+function requireIdle(status: 'idle' | 'running'): void {
+  if (status !== 'idle') throw new Error(`Resume requires an idle agent (status: ${status}).`)
+}
+
+/**
+ * The recovered resume preflight (spec D8): idle at entry AND exit (the agent
+ * can start a turn while the selector is open), the record re-read from a
+ * FRESH listing with its disable ladder re-derived, the full log read once,
+ * and the route it ran on still registered. Throws on every refusal, so the
+ * caller renders one error notice and nothing is torn down.
+ *
+ * The workspace check precedes the ladder deliberately: the ladder's own
+ * no-cwd rung says the same thing in the listing's vocabulary, and going
+ * first keeps this failure's fuller sentence reachable.
+ */
+export async function preflightResume(services: PreflightServices, id: string, opts: { currentId: string; cwd: string }): Promise<{ id: string; cwd: string }> {
+  requireIdle(services.agentStatus())
+  const record = (await services.listSessions()).find((r) => r.header.id === id)
+  if (record === undefined) throw new Error(`Session "${id}" is no longer available.`)
+  const cwd = record.header.cwd
+  if (cwd === undefined) throw new Error(`Session "${id}" has no recorded workspace to resume in.`)
+  const { disabledReason } = summarizeCandidate(record, undefined, undefined, opts.currentId, opts.cwd)
+  if (disabledReason !== undefined) throw new Error(disabledReason)
+  let events: readonly { type: string; data: unknown }[]
+  try {
+    ({ events } = await services.readSession(id))
+  } catch (cause) {
+    throw new Error(`session cannot be loaded: ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
+  const route = resumeRoute(events)
+  if (route !== undefined && !services.listProviders().some((p) => p.id === route.provider)) {
+    throw new Error(`session is complete, but route is currently unavailable (${route.provider}/${route.model})`)
+  }
+  requireIdle(services.agentStatus())
+  return { id, cwd }
 }

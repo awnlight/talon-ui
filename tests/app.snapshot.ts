@@ -66,7 +66,7 @@ describe('talon snapshots', () => {
     const terminal = new HeadlessTerminal(72, 18)
     // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
     const userQuestions = { registerProvider: () => () => {} }
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Rename the button.' }] } })
@@ -100,7 +100,7 @@ describe('talon snapshots', () => {
     const terminal = new HeadlessTerminal(72, 18)
     // No question flow in this checkpoint (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
     const userQuestions = { registerProvider: () => () => {} }
-    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'tool/call', data: { callId: 'c1', name: 'bash', arguments: { command: 'pnpm test' } } })
@@ -131,11 +131,19 @@ describe('talon snapshots', () => {
   // golden shows the whole question.
   const quietCtx = () => ({ on: () => () => {} })
   const idleAgent = () => ({ id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve() })
+  /** Nor does any checkpoint drive /resume or /clear — the resume-selector
+   * golden mounts its panel straight into the controller's PanelManager — so
+   * an inert session-switching set satisfies ControllerDeps. */
+  const sessionDeps = {
+    agents: { resume: async () => ({ agent: idleAgent() }) },
+    createRootAgent: async () => ({ agent: idleAgent() }),
+    services: { sessions: { get: () => undefined }, llm: { listProviders: () => [] } },
+  }
 
   it('question-multiselect', async () => {
     const terminal = new HeadlessTerminal(72, 24)
     const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     const before = terminal.frames
     const outcome = userQuestions.provider!.ask({ questions: [{
@@ -158,7 +166,7 @@ describe('talon snapshots', () => {
   it('plan-review', async () => {
     const terminal = new HeadlessTerminal(72, 24)
     const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService() })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     const before = terminal.frames
     const outcome = userQuestions.provider!.ask({ questions: [{
@@ -180,7 +188,7 @@ describe('talon snapshots', () => {
   it('slash-autocomplete', async () => {
     const terminal = new HeadlessTerminal(72, 18)
     const commands = { ...commandService(), list: () => T2_COMMANDS }
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands, ...sessionDeps })
     await terminal.waitForFrame(0)
     const before = terminal.frames
     terminal.input('/')
@@ -195,7 +203,7 @@ describe('talon snapshots', () => {
 
   it('resume-selector', async () => {
     const terminal = new HeadlessTerminal(72, 18)
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService() })
+    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     let before = terminal.frames
     // Mounted through the controller's own PanelManager (what Task 16 will

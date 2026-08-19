@@ -77,6 +77,14 @@ function fakeAgent(id = 'main') {
     ctx: undefined as unknown,
   }
 }
+// Task 16's session-switching deps: this file drives no /resume or /clear, so
+// an inert set (no sessionQuery at all) satisfies ControllerDeps.
+const sessionDeps = {
+  agents: { resume: async () => ({ agent: fakeAgent('resumed') }) },
+  createRootAgent: async () => ({ agent: fakeAgent('fresh') }),
+  services: { sessions: { get: () => undefined }, llm: { listProviders: () => [] } },
+}
+
 function setup() {
   const ctx = fakeCtx()
   const agent = fakeAgent()
@@ -86,7 +94,7 @@ function setup() {
   const userQuestions = fakeService()
   // No slash-command flow here (see tests/controller.spec.ts) — a no-op registry stub satisfies ControllerDeps.
   const commands = { register: () => () => {}, list: () => [], execute: async () => undefined }
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions, commands })
+  const controller = createController({ ctx, agent, terminal, palette: createPalette(false), exit, userQuestions, commands, ...sessionDeps })
   return { ctx, agent, terminal, exit, controller, userQuestions }
 }
 

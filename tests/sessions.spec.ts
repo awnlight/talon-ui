@@ -1,6 +1,6 @@
 // tests/sessions.spec.ts
 import { describe, expect, it } from 'vitest'
-import { buildResumeCandidates, summarizeCandidate } from '../src/backend/sessions.ts'
+import { buildResumeCandidates, preflightResume, resumeRoute, summarizeCandidate } from '../src/backend/sessions.ts'
 
 const rec = (id: string, over: Partial<{ createdAt: number; cwd: string | undefined; live: boolean; persisted: boolean }> = {}) => ({
   header: { id, createdAt: over.createdAt ?? 1000, ...(('cwd' in over) ? (over.cwd === undefined ? {} : { cwd: over.cwd }) : { cwd: '/w' }) },
@@ -156,5 +156,67 @@ describe('buildResumeCandidates (title fallbacks, failure isolation, ordering)',
     }
     const out = await buildResumeCandidates(services as never, { currentId: 'me', cwd: '/w' })
     expect(out.map((c) => c.id)).toEqual(['alpha', 'zulu'])
+  })
+})
+
+describe('resumeRoute', () => {
+  it('prefers the latest request/header, falls back to the latest assistant/message', () => {
+    const events = [
+      { type: 'assistant/message', data: { message: { source: { provider: 'p-old', model: 'm-old' } } } },
+      { type: 'request/header', data: { header: { config: { provider: 'p1', model: 'm1' } } } },
+      { type: 'request/header', data: { header: { config: { provider: 'p2', model: 'm2' } } } },
+    ]
+    expect(resumeRoute(events)).toEqual({ provider: 'p2', model: 'm2' })
+    expect(resumeRoute([events[0]!])).toEqual({ provider: 'p-old', model: 'm-old' })
+    expect(resumeRoute([])).toBeUndefined()
+  })
+})
+
+describe('preflightResume (recovered semantics)', () => {
+  const services = (over: Record<string, unknown> = {}) => ({
+    agentStatus: () => 'idle' as const,
+    listSessions: async () => [rec('target', { cwd: '/target' })],
+    readSession: async () => ({ events: [{ type: 'request/header', data: { header: { config: { provider: 'deepseek', model: 'chat' } } } }] }),
+    listProviders: () => [{ id: 'deepseek' }],
+    ...over,
+  })
+  const opts = { currentId: 'me', cwd: '/w' }
+  it('passes a clean target and returns the re-read cwd', async () => {
+    await expect(preflightResume(services() as never, 'target', opts)).resolves.toEqual({ id: 'target', cwd: '/target' })
+  })
+  it('rejects when the agent is not idle', async () => {
+    await expect(preflightResume(services({ agentStatus: () => 'running' }) as never, 'target', opts)).rejects.toThrow('Resume requires an idle agent (status: running).')
+  })
+  it('rejects a vanished record', async () => {
+    await expect(preflightResume(services({ listSessions: async () => [] }) as never, 'target', opts)).rejects.toThrow('no longer available')
+  })
+  it('re-derives disable reasons from the FRESH record', async () => {
+    await expect(preflightResume(services({ listSessions: async () => [rec('target', { live: true, cwd: '/target' })] }) as never, 'target', opts))
+      .rejects.toThrow('already live')
+  })
+  it('rejects an unavailable route provider, naming it', async () => {
+    await expect(preflightResume(services({ listProviders: () => [{ id: 'other' }] }) as never, 'target', opts))
+      .rejects.toThrow('route is currently unavailable (deepseek/chat)')
+  })
+  it('rejects an unreadable log with the load-failure chain', async () => {
+    await expect(preflightResume(services({ readSession: async () => { throw new Error('torn file') } }) as never, 'target', opts))
+      .rejects.toThrow('session cannot be loaded: torn file')
+  })
+  it('re-checks idle at exit', async () => {
+    let calls = 0
+    await expect(preflightResume(services({ agentStatus: () => (calls++ === 0 ? 'idle' : 'running') }) as never, 'target', opts))
+      .rejects.toThrow('Resume requires an idle agent (status: running).')
+  })
+  it('names a non-Error load failure through String(cause)', async () => {
+    await expect(preflightResume(services({ readSession: async () => { throw 'torn tail' } }) as never, 'target', opts))
+      .rejects.toThrow('session cannot be loaded: torn tail')
+  })
+  it('refuses a record with no workspace before the ladder repeats it', async () => {
+    await expect(preflightResume(services({ listSessions: async () => [rec('target', { cwd: undefined })] }) as never, 'target', opts))
+      .rejects.toThrow('Session "target" has no recorded workspace to resume in.')
+  })
+  it('accepts a log that names no route at all', async () => {
+    await expect(preflightResume(services({ readSession: async () => ({ events: [] }) }) as never, 'target', opts))
+      .resolves.toEqual({ id: 'target', cwd: '/target' })
   })
 })

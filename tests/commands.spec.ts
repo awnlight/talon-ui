@@ -1,6 +1,6 @@
 // tests/commands.spec.ts
 import { describe, expect, it } from 'vitest'
-import { registerTalonCommands } from '../src/backend/commands.ts'
+import { registerSessionCommands, registerTalonCommands } from '../src/backend/commands.ts'
 
 function fakeCommands() {
   const defs = new Map<string, { name: string; description: string; handler: (i: { commandId: string; agent: unknown; rawInput: string; signal: AbortSignal }) => unknown }>()
@@ -51,5 +51,33 @@ describe('registerTalonCommands', () => {
     await svc.defs.get('exit')!.handler(invoke)
     await svc.defs.get('quit')!.handler(invoke)
     expect(d.exits).toBe(2)
+  })
+})
+
+describe('registerSessionCommands', () => {
+  const invoke = { commandId: 'c', agent: {}, rawInput: '', signal: new AbortController().signal }
+  const deps = () => ({
+    opened: 0,
+    fresh: 0,
+    openResume() { this.opened += 1 },
+    newSession() { this.fresh += 1 },
+  })
+  it('registers the session pair with its descriptions and disposes as one', () => {
+    const svc = fakeCommands()
+    const off = registerSessionCommands(svc as never, deps())
+    expect([...svc.defs.values()].map((d) => [d.name, d.description])).toEqual([
+      ['resume', 'Resume a previous session'],
+      ['clear', 'Start a fresh session'],
+    ])
+    off()
+    expect(svc.defs.size).toBe(0)
+  })
+  it('each handler starts its flow and reports success without text', async () => {
+    const svc = fakeCommands()
+    const d = deps()
+    registerSessionCommands(svc as never, d)
+    expect(await svc.defs.get('resume')!.handler(invoke)).toEqual({ kind: 'success' })
+    expect(await svc.defs.get('clear')!.handler(invoke)).toEqual({ kind: 'success' })
+    expect([d.opened, d.fresh]).toEqual([1, 1])
   })
 })

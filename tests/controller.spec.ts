@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Text } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
-import { createController } from '../src/app/controller.ts'
+import { createController, type ControllerDeps } from '../src/app/controller.ts'
 
 type Listener = (...args: unknown[]) => void
 
@@ -24,7 +24,9 @@ function fakeAgent(id = 'main') {
   return {
     id,
     status: 'idle' as 'idle' | 'running',
-    session: { id },
+    // Typed wide enough for Task 16's rebind tests to hand bindAgent a session
+    // carrying a replayable event log.
+    session: { id } as { id: string; events?: { type: string; data: unknown }[] },
     cancelled: [] as unknown[],
     followups: [] as unknown[],
     cancel(cause: unknown) { this.cancelled.push(cause) },
@@ -82,11 +84,28 @@ function dispatchingCommandService() {
   }
 }
 
+// Task 16's session-switching deps. Inert by default — no /resume flow runs
+// without a `sessionQuery`, and no test reaches the agent factories unless it
+// overrides them.
+function fakeSessionDeps() {
+  return {
+    agents: { resume: async () => ({ agent: fakeAgent('resumed') }) },
+    createRootAgent: async () => ({ agent: fakeAgent('fresh') }),
+    services: { sessions: { get: () => undefined }, llm: { listProviders: () => [{ id: 'deepseek' }] } },
+  }
+}
+
 // `enabled` toggles palette colors on (default off, matching every prior
 // test's plain-text assertions). Only the waiting-color test below needs
 // colors on, to tell the composer's rule-line state apart by SGR (mirrors
 // composer.spec.ts's own fg-13/fg-3 convention).
-function setup(overrides: { enabled?: boolean; commands?: Partial<ReturnType<typeof fakeCommandService>> } = {}) {
+function setup(overrides: {
+  enabled?: boolean
+  commands?: Partial<ReturnType<typeof fakeCommandService>>
+  agents?: ControllerDeps['agents']
+  createRootAgent?: ControllerDeps['createRootAgent']
+  services?: Partial<ControllerDeps['services']>
+} = {}) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
   agent.ctx = ctx
@@ -95,7 +114,13 @@ function setup(overrides: { enabled?: boolean; commands?: Partial<ReturnType<typ
   // This file doesn't exercise user-questions flows (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
   const userQuestions = { registerProvider: () => () => {} }
   const commands = { ...fakeCommandService(), ...overrides.commands }
-  const controller = createController({ ctx, agent, terminal, palette: createPalette(overrides.enabled ?? false), exit, userQuestions, commands })
+  const session = fakeSessionDeps()
+  const controller = createController({
+    ctx, agent, terminal, palette: createPalette(overrides.enabled ?? false), exit, userQuestions, commands,
+    agents: overrides.agents ?? session.agents,
+    createRootAgent: overrides.createRootAgent ?? session.createRootAgent,
+    services: { ...session.services, ...overrides.services },
+  })
   return { ctx, agent, terminal, exit, controller, commands }
 }
 
@@ -351,7 +376,7 @@ describe('controller', () => {
     const { ctx, agent, terminal, controller } = setup({ commands: { ...svc, list: () => [{ name: 'help', description: 'List available commands' }] } })
     const text = (name: string): string | undefined => (svc.handlers.get(name)!() as { text?: string }).text
     await terminal.waitForFrame(0)
-    expect([...svc.handlers.keys()].sort()).toEqual(['exit', 'help', 'quit', 'status'])
+    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'quit', 'resume', 'status'])
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent idle`)
     expect(text('help')).toBe('/help — List available commands')
     agent.status = 'running'
@@ -447,6 +472,210 @@ describe('controller', () => {
     await vi.waitFor(() => expect(commands.execute).toHaveBeenCalledOnce())
     expect(commands.execute.mock.calls[0]![1]).toBe('/status')
     expect(agent.followups.length).toBe(0)
+    await controller.dispose()
+  })
+})
+
+// One persisted listing behind `sessionQuery`, plus the projection services
+// when a test wants the per-record title ladder instead of the batch rung.
+const record = (id: string, cwd: string, over: { createdAt?: number; live?: boolean } = {}) =>
+  ({ header: { id, createdAt: over.createdAt ?? 1000, cwd }, live: over.live ?? false, persisted: true })
+
+const ROUTE_LOG = { events: [{ type: 'request/header', data: { header: { config: { provider: 'deepseek', model: 'chat' } } } }] }
+
+describe('bindAgent / resume wiring', () => {
+  // process.cwd/chdir are spied per test below — restore them so a later test
+  // (and the worker itself) keeps the real working directory.
+  afterEach(() => vi.restoreAllMocks())
+
+  it('rebind replays the new session and routes input to the new agent', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    const next = fakeAgent('next')
+    next.session = { id: 'next', events: [
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'old prompt' }], source: { kind: 'user' } } },
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'old reply' }] } } },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ] }
+    const before = terminal.frames
+    controller.bindAgent(next as never)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('old reply')
+    ctx.emit('session/event', next.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'live after rebind' }], source: { kind: 'user' } } })
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('live after rebind'))
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'stale old-agent event' }], source: { kind: 'user' } } })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(terminal.snapshot()).not.toContain('stale old-agent event')
+    terminal.input('hello'); terminal.input('\r')
+    expect(next.followups.length).toBe(1)
+    expect(agent.followups.length).toBe(0)
+    await controller.dispose()
+  })
+
+  it('/resume refuses while a turn is running', async () => {
+    const { ctx, agent, terminal, controller } = setup({ commands: dispatchingCommandService() })
+    await terminal.waitForFrame(0)
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    terminal.input('/resume')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Resume is not available while a turn is'))
+    await controller.dispose()
+  })
+
+  it('/resume without a mounted session query says so', async () => {
+    const { terminal, controller } = setup({ commands: dispatchingCommandService() })
+    await terminal.waitForFrame(0)
+    terminal.input('/resume')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Resume is not available: session query is not'))
+    await controller.dispose()
+  })
+
+  it('/resume picks a foreign-workspace session: preflight, chdir, resume, rebind', async () => {
+    // chdir is spied on EVERY resume test: a real chdir would move the whole
+    // vitest worker out of the repo.
+    const chdir = vi.spyOn(process, 'chdir').mockImplementation(() => {})
+    vi.spyOn(process, 'cwd').mockReturnValue('/w')
+    const resumed = fakeAgent('target')
+    resumed.session = { id: 'target', events: [
+      { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'resumed reply' }] } } },
+    ] }
+    const resume = vi.fn(async (_opts: { resumeSessionId: string }) => ({ agent: resumed }))
+    const { terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      agents: { resume } as never,
+      services: {
+        // The full title ladder: a live session (live rung), a cached hit, and
+        // one record left for the cold rung.
+        sessionQuery: {
+          listSessions: async () => [record('live-1', '/w', { createdAt: 300, live: true }), record('target', '/target', { createdAt: 200 }), record('cold-1', '/w', { createdAt: 100 })],
+          readSession: async () => ROUTE_LOG,
+          readTitleSnapshots: async () => { throw new Error('batch rung must not run when the cache ladder exists') },
+        } as never,
+        sessions: { get: (id: string) => (id === 'live-1' ? { events: [{ time: 900 }] } : undefined) },
+        projections: { snapshot: () => ({ values: { title: 'Live title' } }) },
+        projectionCache: {
+          cachedSnapshot: (h: { id: string }) => (h.id === 'target' ? { values: { title: 'Fix the login flow' } } : undefined),
+          coldSnapshot: async () => ({ values: { title: 'Cold title' } }),
+        } as never,
+      },
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/resume')
+    terminal.input('\r')
+    // The default scope lists this workspace only: the cold-rung row proves
+    // the ladder ran; the target itself lives elsewhere.
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Cold title'))
+    expect(terminal.snapshot()).not.toContain('Fix the login flow')
+    terminal.input('\t')        // scope → all workspaces (the target lives elsewhere)
+    terminal.input('\x1b[B')    // down onto it
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Resumed session target · /target'))
+    expect(chdir).toHaveBeenCalledWith('/target')
+    expect(resume).toHaveBeenCalledWith({ resumeSessionId: 'target' })
+    expect(terminal.snapshot()).toContain('resumed reply')
+    await controller.dispose()
+  })
+
+  it('a chdir failure leaves the old binding intact and renders the error', async () => {
+    const chdir = vi.spyOn(process, 'chdir').mockImplementation(() => { throw new Error('ENOENT: no such directory') })
+    vi.spyOn(process, 'cwd').mockReturnValue('/w')
+    const resume = vi.fn(async (_opts: { resumeSessionId: string }) => ({ agent: fakeAgent('target') }))
+    // No projection services here: the title ladder falls back to the single
+    // readTitleSnapshots batch.
+    const { agent, terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      agents: { resume } as never,
+      services: {
+        sessionQuery: {
+          listSessions: async () => [record('target', '/w')],
+          readSession: async () => ROUTE_LOG,
+          readTitleSnapshots: async (ids: readonly string[]) => ids.map((sessionId) => ({ sessionId, status: 'fulfilled' as const, value: { title: { title: 'Batch title' } } })),
+        } as never,
+      },
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/resume')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Batch title'))
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Resume failed: ENOENT: no such directory'))
+    expect(chdir).toHaveBeenCalledOnce()
+    expect(resume).not.toHaveBeenCalled()
+    terminal.input('still here')
+    terminal.input('\r')
+    expect(agent.followups.length).toBe(1)   // the original agent is still the bound one
+    await controller.dispose()
+  })
+
+  it('a failed candidate build closes the selector with an error notice', async () => {
+    vi.spyOn(process, 'chdir').mockImplementation(() => {})
+    const { terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      services: { sessionQuery: { listSessions: async () => { throw new Error('listing exploded') } } as never },
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/resume')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Resume failed: listing exploded'))
+    expect(terminal.snapshot()).not.toContain('Loading sessions')
+    await controller.dispose()
+  })
+
+  it('teardown force-settles an open selector without resuming anything', async () => {
+    const resume = vi.fn(async (_opts: { resumeSessionId: string }) => ({ agent: fakeAgent('target') }))
+    const { terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      agents: { resume } as never,
+      services: { sessionQuery: { listSessions: () => new Promise(() => {}) } as never },
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/resume')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Loading sessions'))
+    await controller.dispose()
+    await new Promise((r) => setTimeout(r, 10))
+    expect(resume).not.toHaveBeenCalled()
+  })
+
+  it('/clear mints a fresh session and binds it', async () => {
+    const fresh = fakeAgent('fresh')
+    const { terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      createRootAgent: async () => ({ agent: fresh }),
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/clear')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Started a fresh session fresh'))
+    terminal.input('after clear')
+    terminal.input('\r')
+    expect(fresh.followups.length).toBe(1)
+    await controller.dispose()
+  })
+
+  it('/clear reports a failed creation, non-Error causes included', async () => {
+    const { terminal, controller } = setup({
+      commands: dispatchingCommandService(),
+      createRootAgent: async () => { throw 'no agent factory registered' },
+    })
+    await terminal.waitForFrame(0)
+    terminal.input('/clear')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('New session failed: no agent factory'))
+    await controller.dispose()
+  })
+
+  it('/clear refuses while a turn is running', async () => {
+    const { ctx, agent, terminal, controller } = setup({ commands: dispatchingCommandService() })
+    await terminal.waitForFrame(0)
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    terminal.input('/clear')
+    terminal.input('\r')
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('A fresh session is not available while a'))
     await controller.dispose()
   })
 })

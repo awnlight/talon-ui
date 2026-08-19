@@ -35,7 +35,7 @@
  * `FiberState.FAILED`. That fiber-level catch is this file's rejection
  * safety net, not dsh-headless's manual `.catch`.
  */
-import type { AgentRegistry, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentRegistry, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 /** Minimal structural shape of the Cordis plugin context this file needs.
@@ -93,9 +93,22 @@ async function run(ctx: BootContext, config: Config): Promise<void> {
   // adapters/tools/skills are not half-composed (dsh-headless precedent,
   // packages/bundle/headless/src/index.ts:99). Absent outside Loader boots.
   await (ctx.get('loader') as { await(): Promise<void> } | undefined)?.await()
-  const sessionId = SessionId(config.sessionId ?? `session-${crypto.randomUUID()}`)
-  const existing = ctx.agents.roots().find(agent => agent.id === sessionId)
-  if (existing) return
+  await createRootAgent(ctx, config.sessionId)
+}
+
+/**
+ * Create (or find) the root agent for one session id. Extracted from `run()`
+ * so talon-ui's `/clear` can mint a fresh session through the exact same
+ * composition the boot uses (T2 Ruling 10) — the caller binds the returned
+ * agent, nothing else changes.
+ * @param ctx - Cordis context carrying the agent registry and agent-loop factory.
+ * @param sessionId - session to create; a fresh UUID per call when omitted
+ *   (dsh persists one log per session id, so a fixed default would collide).
+ */
+export async function createRootAgent(ctx: BootContext, sessionId?: string): Promise<{ agent: Agent }> {
+  const id = SessionId(sessionId ?? `session-${crypto.randomUUID()}`)
+  const existing = ctx.agents.roots().find(agent => agent.id === id)
+  if (existing) return { agent: existing }
   // Model selection: dsh-base's agent-default-model row supplies the
   // transport-independent default (settings-overridable). Without it the
   // request waterfall has no provider/model and every turn errors — fail
@@ -115,8 +128,8 @@ async function run(ctx: BootContext, config: Config): Promise<void> {
   const { installModelSelection } = (await import('@deepseek-ai/dsh-agent')) as unknown as {
     installModelSelection(agentCtx: unknown, ref: ModelSelectionRef): () => void
   }
-  await ctx.agents.create({
-    sessionId,
+  return await ctx.agents.create({
+    sessionId: id,
     meta: { cwd: process.cwd() },
     agentOptions: { provider: selection.provider, model: selection.model },
     setup: (agentCtx) => {
