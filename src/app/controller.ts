@@ -201,13 +201,19 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // The screen transition (D10④, Task 19): a rebind swaps the WHOLE UI, so
     // diffing new-against-old flags rows above the viewport, and pi-tui's only
     // recovery there is fullRender(true) — the ED3 scrollback wipe (verified
-    // tui-main-screen.js:346-350). Instead, finish the old screen the way
-    // tui.stop() does (tui-main-screen.js:81-92: park the cursor on a fresh
-    // row below it) and hand the renderer a first-render baseline, so the new
-    // session's UI APPENDS and the old screen scrolls into history intact.
+    // tui-main-screen.js:346-350). Instead, park the cursor on a fresh row
+    // below the old screen (as beforeTerminalStop does, tui-main-screen.js:
+    // 81-92; after any completed paint hardwareCursorRow is clamped inside
+    // the rendered block, so the distance down is >= 1 — the clamp only bars
+    // a malformed CSI param) and hand the renderer a no-previous-frame
+    // baseline, so the new session's UI APPENDS and the old screen scrolls
+    // into history intact. The ZERO width/height sentinels are load-bearing:
+    // doRender treats 0 as "no previous frame" (widthChanged tests `!== 0`,
+    // tui-main-screen.js:158-159) — the protected resetRenderState()'s -1
+    // would read as a resize and fullRender(true)-wipe instead.
     const screen = tui.captureRenderState()
     if (screen.previousLines.length > 0) {
-      terminal.write(` \x1b[${screen.previousLines.length - screen.hardwareCursorRow}B\r\n`)
+      terminal.write(` \x1b[${Math.max(1, screen.previousLines.length - screen.hardwareCursorRow)}B\r\n`)
     }
     tui.restoreRenderState({ previousLines: [], previousWidth: 0, previousHeight: 0, cursorRow: 0, hardwareCursorRow: 0, maxLinesRendered: 0, previousViewportTop: 0 })
     bound = next
