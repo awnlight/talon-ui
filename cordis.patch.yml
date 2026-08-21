@@ -32,6 +32,16 @@
         writeEveryEvents: 200
         writeIntervalMs: 5000
 
+    # dsh-base composes the user-questions SERVICE but not the model-facing
+    # ask_user_question tool (verified: no tool-ask-user row in
+    # packages/bundle/base/cordis.patch.yml; only plan-mode consumes the seam
+    # there). UI-carrying compositions add the tool themselves, so talon —
+    # which ships the question panel (spec §4.4, Tasks 9–11) — composes it
+    # here. Found live in the T2 final acceptance run: without this row the
+    # model cannot ask, and the multi-select acceptance line is unreachable.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
     # sessionId pairing law (T2 carryover 2): set `sessionId` on BOTH rows or
     # NEITHER. talon-boot mints a fresh UUID when unset and talon-ui binds the
     # first root agent, so the defaults compose — but a single-sided pin binds
