@@ -1,5 +1,7 @@
 # Talon
 
+[![npm](https://img.shields.io/npm/v/talon-ui)](https://www.npmjs.com/package/talon-ui)
+
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh)agent 的终端 UI,以 dsh **插件 bundle** 形式交付。Talon 在不改动 harness 检出的前提下,在终端里呈现完整的交互式会话——流式转录、工具审批、用户提问、斜杠命令、跨工作区会话恢复。
 
 ![talon 会话:角色头、上下文注入卡片与流式回复](docs/assets/talon.png)
@@ -23,16 +25,30 @@
 
 ## 安装
 
-先构建 harness(talon 的 typecheck 与 profile 都从同级检出解析 dsh 包):
+无论哪种方式,都先构建 harness(dsh 是 talon 运行的宿主):
 
 ```bash
 cd deepseek-harness && pnpm install && pnpm run build:lib:host
 ```
 
-再构建 talon 并安装进 dsh profile:
+### 从 npm 安装
+
+Talon 已发布为 [`talon-ui`](https://www.npmjs.com/package/talon-ui) —— 无需 clone、无需构建,包内自带预构建的 `lib/`:
 
 ```bash
-cd ../talon-ui && pnpm install && pnpm build
+cd deepseek-harness
+pnpm dsh plugin --profile talon add talon-ui
+pnpm dsh --profile talon
+```
+
+`talon-ui@0.1.0` 已对 dsh `0.1.1-rc` 系列验证。
+
+### 从源码安装(开发)
+
+把本仓库 clone 为 `deepseek-harness` 的同级目录,构建后用活符号链接安装 profile:
+
+```bash
+cd talon-ui && pnpm install && pnpm build
 cd ../deepseek-harness
 pnpm dsh plugin --profile talon add link:../talon-ui
 ```

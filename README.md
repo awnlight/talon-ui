@@ -1,5 +1,7 @@
 # Talon
 
+[![npm](https://img.shields.io/npm/v/talon-ui)](https://www.npmjs.com/package/talon-ui)
+
 A terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) agents, shipped as a dsh **plugin bundle**. Talon renders a full interactive session — streaming transcript, tool approvals, user questions, slash commands, and cross-workspace session resume — inside your terminal, on top of an unmodified harness checkout.
 
 ![A talon session: role headers, context-injection cards, and a streaming reply](docs/assets/talon.png)
@@ -23,16 +25,30 @@ A terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-har
 
 ## Install
 
-Build the harness first (talon's typecheck and the profile both resolve dsh packages from the sibling checkout):
+Either way, build the harness first (dsh is the host talon runs in):
 
 ```bash
 cd deepseek-harness && pnpm install && pnpm run build:lib:host
 ```
 
-Then build talon and install it into a dsh profile:
+### From npm
+
+Talon is published as [`talon-ui`](https://www.npmjs.com/package/talon-ui) — no clone, no build, prebuilt `lib/` ships in the package:
 
 ```bash
-cd ../talon-ui && pnpm install && pnpm build
+cd deepseek-harness
+pnpm dsh plugin --profile talon add talon-ui
+pnpm dsh --profile talon
+```
+
+`talon-ui@0.1.0` is verified against the dsh `0.1.1-rc` line.
+
+### From source (development)
+
+Clone this repo as a sibling of `deepseek-harness`, build it, and install the profile with a live symlink:
+
+```bash
+cd talon-ui && pnpm install && pnpm build
 cd ../deepseek-harness
 pnpm dsh plugin --profile talon add link:../talon-ui
 ```
