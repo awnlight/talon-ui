@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript strict ESM, Node >=22.19, pnpm, `@earendil-works/pi-tui@0.84.1`, vitest 3 + `@vitest/coverage-v8@3.2.7` + `@xterm/headless@5.5.0`, dsh packages source-linked from `../deepseek-harness` (must be built: `pnpm run build:lib:host` there first; treat dsh as read-only).
 
-**Spec:** `docs/superpowers/specs/2026-08-13-talon-ui-design.md` (D5, D8, D9, D10, §3 contract signatures, §4.4 panels, §8 T2 acceptance row). Carryover: `docs/superpowers/plans/2026-08-14-t2-carryover.md` (all 12 items land here; item 10's spec edit included).
+**Spec:** `docs/specs/2026-08-13-talon-ui-design.md` (D5, D8, D9, D10, §3 contract signatures, §4.4 panels, §8 T2 acceptance row). Carryover: `docs/plans/2026-08-14-t2-carryover.md` (all 12 items land here; item 10's spec edit included).
 
 ## Global Constraints
 
@@ -3022,7 +3022,7 @@ git commit -m "feat: ContextCard for injected non-user context (T2 carryover 11)
 
 **Files:**
 - Modify: `src/app/controller.ts`, `src/ui/composer/composer.ts`
-- Modify: `cordis.patch.yml`, `docs/superpowers/specs/2026-08-13-talon-ui-design.md`
+- Modify: `cordis.patch.yml`, `docs/specs/2026-08-13-talon-ui-design.md`
 - Modify: `tests/controller.spec.ts`, `tests/composer.spec.ts`
 
 **Interfaces:**

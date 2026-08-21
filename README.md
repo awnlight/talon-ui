@@ -80,7 +80,7 @@ pnpm test:e2e    # live PTY smoke: boot → stream → approval escalation → g
 
 `pnpm test:e2e` drives a real `pnpm dsh --profile talon` session on a PTY against the live model. It needs the built harness, the `link:`-installed talon profile, `DEEPSEEK_API_KEY`, and `python3`; when anything is missing the suite skips itself, and the default `pnpm test` never runs it. The approval phase creates and removes `~/.talon-e2e-<pid>`.
 
-Design documents live under [docs/superpowers/](docs/superpowers/) (spec and per-milestone implementation plans).
+Design documents live under [docs/](docs/): the design spec in [docs/specs/](docs/specs/) and per-milestone implementation plans in [docs/plans/](docs/plans/).
 
 ## Architecture
 

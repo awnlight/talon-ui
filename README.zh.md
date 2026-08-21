@@ -80,7 +80,7 @@ pnpm test:e2e    # live PTY 冒烟:启动 → 流式 → 审批提权 → 告别
 
 `pnpm test:e2e` 在真实 PTY 上驱动一次 `pnpm dsh --profile talon` 的活模型会话。前置条件:已构建的 harness、`link:` 安装的 talon profile、`DEEPSEEK_API_KEY`、`python3`;缺任意一项时套件自动跳过,默认 `pnpm test` 永不运行它。审批阶段会创建并删除 `~/.talon-e2e-<pid>`。
 
-设计文档位于 [docs/superpowers/](docs/superpowers/)(spec 与各里程碑实施计划)。
+设计文档位于 [docs/](docs/):设计 spec 在 [docs/specs/](docs/specs/),各里程碑实施计划在 [docs/plans/](docs/plans/)。
 
 ## 架构
 
