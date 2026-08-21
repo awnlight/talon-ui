@@ -42,6 +42,23 @@ describe('StreamingAssistantCell', () => {
     const b = cell.render(80)
     expect(b).toBe(a)
   })
+  it('settle: a content block with text undefined renders as header plus one empty line (b.text ?? \'\')', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.settle([{ type: 'text' }])
+    const lines = cell.render(80)
+    expect(lines.length).toBe(2)
+    expect(lines[0]).toContain('talon')
+    expect(lines[1]).toBe('')
+  })
+  it('invalidate() drops the settled cache, forcing a re-render', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.settle([{ type: 'text', text: 'final' }])
+    const a = cell.render(80)
+    cell.invalidate()
+    const b = cell.render(80)
+    expect(b).not.toBe(a) // cache was dropped: a fresh array
+    expect(b).toEqual(a) // same content though
+  })
   it('does not cache while still live (content changes every chunk)', () => {
     const cell = new StreamingAssistantCell(p)
     cell.update({ index: 0, block: 'text', text: 'partial' })

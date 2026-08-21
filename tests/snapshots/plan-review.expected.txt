@@ -1,0 +1,25 @@
+terminal 72x24 buffer=normal length=24 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @14,72
+0| <blank>
+1| "─ plan review ──────────────────────────────────────────────────────────"
+  style 0-71 dim
+2| "Question 1/1 (1 unanswered) · Plan review"
+  style 0-40 dim
+3| "Approve this plan and leave plan mode?"
+4| <blank>
+5| "# The plan"
+6| "1. do things"
+7| <blank>
+8| " › 1. ▸ Approve"
+  style 0-14 fg-13 bold
+9| "   2. Keep planning"
+10| <blank>
+11| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
+  style 0-62 dim
+12| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 fg-3
+13| <blank>
+14| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+15-23| <blank>

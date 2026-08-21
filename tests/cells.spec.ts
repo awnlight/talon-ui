@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createPalette } from '../src/theme/palette.ts'
-import { CachedCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
+import { ApprovalAuditCell, CachedCell, ContextCardCell, messageHeader, NoticeCell, UserMessageCell } from '../src/ui/transcript/cells.ts'
 
 const p = createPalette(false)
 
@@ -50,6 +50,40 @@ describe('UserMessageCell / NoticeCell', () => {
     const cell = new NoticeCell({ text: 'Turn cancelled.', tone: 'warning' }, p)
     expect(cell.render(80).join('\n')).toContain('Turn cancelled.')
   })
+  it('each notice tone picks its own color role', () => {
+    const colored = createPalette(true)
+    expect(new NoticeCell({ text: 'x', tone: 'info' }, colored).render(80)[0]).toBe(colored.dim('x'))
+    expect(new NoticeCell({ text: 'x', tone: 'warning' }, colored).render(80)[0]).toBe(colored.warning('x'))
+    expect(new NoticeCell({ text: 'x', tone: 'error' }, colored).render(80)[0]).toBe(colored.error('x'))
+  })
+})
+
+describe('ApprovalAuditCell', () => {
+  it('each outcome tone picks its own color role, and known words are relabeled', () => {
+    const colored = createPalette(true)
+    expect(new ApprovalAuditCell('bash', 'allowed-once', colored).render(80).join('\n')).toContain(colored.success('allowed once'))
+    expect(new ApprovalAuditCell('bash', 'cancelled', colored).render(80).join('\n')).toContain(colored.warning('cancelled'))
+    expect(new ApprovalAuditCell('bash', 'rejected', colored).render(80).join('\n')).toContain(colored.error('rejected'))
+    expect(new ApprovalAuditCell('bash', 'unavailable', colored).render(80).join('\n')).toContain(colored.error('unavailable'))
+  })
+  it('falls back to the raw outcome string for an unrecognized outcome word', () => {
+    const line = new ApprovalAuditCell('bash', 'mystery', p).render(80).join('\n')
+    expect(line).toContain('◆ approval · bash · mystery')
+  })
+  it('neutralizes hostile tool text at the display boundary (D7.8)', () => {
+    const line = new ApprovalAuditCell('bash\x1b]0;evil\x07', 'rejected', p).render(80).join('\n')
+    expect(line).toContain('\\x1b]0;evil\\x07')
+  })
+})
+
+describe('ContextCardCell', () => {
+  it('ContextCardCell renders one dim collapsed line with neutralized metadata', () => {
+    const cell = new ContextCardCell('skill\x1bcatalog', 'sum\x07mary', 12, createPalette(false))
+    expect(cell.contentLineCount()).toBe(1)
+    const rows = cell.render(60)
+    expect(rows).toEqual([expect.stringContaining('◇ context · skill\\x1bcatalog · sum\\x07mary · 12 lines')])
+    expect(cell.render(60)).toBe(rows)   // width-keyed cache identity (.toBe law)
+  })
 })
 
 describe('width wrapping (TuiMainScreen row-width law)', () => {
@@ -67,5 +101,13 @@ describe('width wrapping (TuiMainScreen row-width law)', () => {
     cell.render(10)
     cell.render(200)
     expect(cell.contentLineCount()).toBe(4)
+  })
+  it('renders at width 1 without throwing (extreme narrow wrap)', () => {
+    const cell = new UserMessageCell('hi', p)
+    expect(() => cell.render(1)).not.toThrow()
+  })
+  it('an embedded blank logical line renders as an empty row', () => {
+    const cell = new UserMessageCell('hello\n\nworld', p)
+    expect(cell.render(80)).toContain('')
   })
 })

@@ -20,6 +20,7 @@ export class HeadlessTerminal implements Terminal {
   private progressActive = false
   private cursorHidden = false
   private frameCount = 0
+  private wipes = 0
   private waiters: { after: number; resolve(): void }[] = []
 
   constructor(private readonly cols = 100, private readonly rowCount = 36) {
@@ -27,6 +28,10 @@ export class HeadlessTerminal implements Terminal {
   }
 
   get frames(): number { return this.frameCount }
+
+  /** ED3 (`\x1b[3J`) occurrences across everything written — the signature of
+   * pi-tui's full-redraw scrollback wipe (D10; gated by tests/redraw.spec.ts). */
+  get scrollbackWipes(): number { return this.wipes }
 
   waitForFrame(after: number, timeoutMs = 2000): Promise<void> {
     if (this.frameCount > after) return Promise.resolve()
@@ -56,6 +61,9 @@ export class HeadlessTerminal implements Terminal {
   stop(): void { this.stopped += 1; this.inputHandler = undefined }
   async drainInput(): Promise<void> {}
   write(data: string): void {
+    // Counted on the RAW written stream, before the emulator parses it: the
+    // wipe is a property of what the TUI EMITS, not of post-parse state.
+    this.wipes += (data.split('\x1b[3J').length - 1)
     // @xterm/headless parses asynchronously (write's 2nd arg is a completion
     // callback per its typings). Frame completion must wait for that callback
     // — otherwise waitForFrame() can resolve before the buffer reflects the
@@ -103,6 +111,7 @@ export class HeadlessTerminal implements Terminal {
     }
     for (let y = 0; y < buf.length; y++) {
       const line = buf.getLine(y)
+      /* v8 ignore next -- defensive: @xterm/headless's real getLine(y) never returns undefined for y in [0, buf.length), only for out-of-range indices this loop never produces */
       if (!line) continue
       // translateToString(true) only trims cells with no character data; pi-tui
       // pads rows with literal space characters (real cells), so those survive
@@ -141,6 +150,7 @@ export class HeadlessTerminal implements Terminal {
   private styleRuns(y: number): string[] {
     const buf = this.emulator.buffer.active
     const line = buf.getLine(y)
+    /* v8 ignore next -- defensive: styleRuns is only ever called by snapshot() for a y it already confirmed has a line; see the twin guard above */
     if (!line) return []
     const runs: string[] = []
     let runStart = -1
@@ -162,9 +172,11 @@ export class HeadlessTerminal implements Terminal {
     const violations: string[] = []
     for (let y = 0; y < buf.length; y++) {
       const line = buf.getLine(y)
+      /* v8 ignore next -- defensive: same xterm buffer contract as snapshot()'s guard above (real getLine(y) never returns undefined for in-range y) */
       if (!line) continue
       for (let x = 0; x < line.length; x++) {
         const cell = line.getCell(x)
+        /* v8 ignore next -- defensive: getCell(x) never returns undefined for x in [0, line.length) on a real xterm buffer line */
         if (!cell) continue
         if (cell.isFgRGB()) violations.push(`${y}:${x} rgb-fg`)
         if (cell.isBgRGB()) violations.push(`${y}:${x} rgb-bg`)

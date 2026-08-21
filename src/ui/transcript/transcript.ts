@@ -5,7 +5,7 @@
 import { Container, Spacer, Text, type Component } from '@earendil-works/pi-tui'
 import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
-import { NoticeCell, UserMessageCell } from './cells.js'
+import { ApprovalAuditCell, ContextCardCell, NoticeCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
@@ -22,14 +22,16 @@ export class Transcript {
   private live: { key: string; cell: StreamingAssistantCell } | undefined
   private readonly cap: number
   private marker: Text | undefined
-  // Running total mirroring container.render(width).length (D10 mount cap),
-  // maintained incrementally so apply() never renders the container just to
-  // check the cap. That render used to run on EVERY apply() at an invented
-  // width (200) nothing else used — ~500x per-event overhead, and it
-  // thrashed every cell's single-slot width cache against whatever width
-  // real callers actually render at. mountedLines(width) below still does a
+  // The running total mirrors CONTENT lines (logical, pre-wrap); visual rows may
+  // exceed it by the wrap factor — bounded, by design (D10). The trim marker is
+  // one content line. This accounting is maintained incrementally so apply() never
+  // renders the container just to check the cap. mountedLines(width) still does a
   // real render, but only when an external caller asks for a specific width.
   private mountedLineCount = 0
+  // approval-asked carries no audit text of its own — it only tells the
+  // matching approval-decided which tool it was asked about (spec D9's
+  // replay-safe id correlation; the pair need not be contiguous).
+  private readonly askedTools = new Map<string, string>()
 
   constructor(private readonly palette: Palette, options?: { mountCapLines?: number }) {
     this.cap = options?.mountCapLines ?? 5000
@@ -40,8 +42,12 @@ export class Transcript {
   apply(event: AppEvent): void {
     switch (event.kind) {
       case 'user-message':
-        if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+        this.spaceBeforeNewCell()
         { const c = new UserMessageCell(event.text, this.palette); this.addChild(c, c.contentLineCount()) }
+        break
+      case 'context-card':
+        this.spaceBeforeNewCell()
+        { const c = new ContextCardCell(event.label, event.summary, event.lines, this.palette); this.addChild(c, c.contentLineCount()) }
         break
       case 'stream-delta': {
         const cell = this.cell(`${event.turn}:${event.step}`)
@@ -55,7 +61,7 @@ export class Transcript {
         const cell = this.cell(key)
         if (cell.isSettled()) {
           // A settled cell never re-absorbs a later message (replay-parity fix): new cell.
-          if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+          this.spaceBeforeNewCell()
           const fresh = new StreamingAssistantCell(this.palette)
           fresh.settle(event.content)
           this.addChild(fresh, fresh.lineCount())
@@ -69,12 +75,42 @@ export class Transcript {
       }
       case 'turn-end':
         if (event.notice) {
-          if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+          this.spaceBeforeNewCell()
           { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
         }
         this.live = undefined
         break
       case 'turn-start': case 'step-start': case 'step-end':
+        break
+      case 'tool-call':
+        break // cards land in T3; the controller consumes previews
+      case 'approval-asked':
+        this.askedTools.set(event.id, event.toolName)
+        break
+      case 'approval-decided': {
+        const tool = this.askedTools.get(event.id) ?? '(unknown tool)'
+        this.askedTools.delete(event.id)
+        this.spaceBeforeNewCell()
+        const c = new ApprovalAuditCell(tool, event.outcome, this.palette)
+        this.addChild(c, c.contentLineCount())
+        break
+      }
+      case 'command-run': {
+        this.spaceBeforeNewCell()
+        const c = new NoticeCell({ text: `/${event.name}${event.args === undefined ? '' : ` ${event.args}`}`, tone: 'info' }, this.palette)
+        this.addChild(c, c.contentLineCount())
+        break
+      }
+      case 'command-done':
+        if (event.text !== undefined && event.text !== '') {
+          this.spaceBeforeNewCell()
+          const c = new NoticeCell({ text: event.text, tone: event.result === 'error' ? 'error' : 'info' }, this.palette)
+          this.addChild(c, c.contentLineCount())
+        }
+        break
+      case 'notice':
+        this.spaceBeforeNewCell()
+        { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
         break
     }
     this.trim()
@@ -85,9 +121,15 @@ export class Transcript {
     this.mountedLineCount += lines
   }
 
+  /** One rule, four former call sites: every new cell is preceded by a
+   * one-line spacer unless it is the very first child (spec §4.1 spacing). */
+  private spaceBeforeNewCell(): void {
+    if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+  }
+
   private cell(key: string): StreamingAssistantCell {
     if (this.live?.key !== key) {
-      if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+      this.spaceBeforeNewCell()
       const cell = new StreamingAssistantCell(this.palette)
       this.addChild(cell, cell.lineCount())
       this.live = { key, cell }
@@ -98,6 +140,7 @@ export class Transcript {
   private trim(): void {
     while (this.container.children.length > 2 && this.mountedLineCount > this.cap) {
       const first = this.container.children.find((c) => c !== this.marker)
+      /* v8 ignore next -- defensive: unreachable given the while-guard above. `this.marker` is at most one instance, so children.length > 2 always leaves at least one non-marker child for find() to return. */
       if (!first) break
       this.container.removeChild(first)
       this.mountedLineCount -= this.lineCountOf(first)

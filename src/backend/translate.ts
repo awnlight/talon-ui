@@ -22,8 +22,22 @@ function textOf(content: ContentBlockLike[] | undefined): string {
 export function translateSessionEvent(event: RawEvent): AppEvent[] {
   const d = event.data as Record<string, any>
   switch (event.type) {
-    case 'user/message':
-      return [{ kind: 'user-message', text: textOf(d.content) }]
+    case 'user/message': {
+      // `source.kind === 'user'` is the ONLY real typed prompt (dsh's
+      // MessageSourceMap, llm/src/message.ts:100); every other kind is
+      // injected context. An absent source keeps fixture/legacy logs on the
+      // prompt path.
+      const kind = (d.source as { kind?: string } | undefined)?.kind ?? 'user'
+      if (kind === 'user') return [{ kind: 'user-message', text: textOf(d.content) }]
+      const source = d.source as { form?: string; summary?: string }
+      const text = textOf(d.content)
+      return [{
+        kind: 'context-card',
+        label: kind,
+        summary: source.form === 'notice' ? source.summary : undefined,
+        lines: text === '' ? 0 : text.split('\n').length,
+      }]
+    }
     case 'turn/start':
       return [{ kind: 'turn-start', turn: d.turn }]
     case 'turn/end':
@@ -44,6 +58,29 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
     }
     case 'assistant/message':
       return [{ kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] }]
+    case 'tool/call': {
+      const raw = d.arguments
+      const args = typeof raw === 'string'
+        ? (() => { try { return JSON.parse(raw) as Record<string, unknown> } catch { return undefined } })()
+        : (raw as Record<string, unknown> | undefined)
+      const command = args?.command
+      return [{ kind: 'tool-call', callId: String(d.callId ?? ''), name: String(d.name ?? ''), preview: typeof command === 'string' ? command : undefined }]
+    }
+    case 'approval/asked':
+      return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
+    case 'approval/decided':
+      return [{ kind: 'approval-decided', id: String(d.id), outcome: String(d.outcome) }]
+    case 'command/run': {
+      // dsh records `args` as parseCommand's verbatim rawInput — the separator
+      // whitespace stays in it and an argument-less command records '' (the
+      // lookahead + `line.slice(match[0].length)` at commands/src/index.ts:
+      // 101-107, recorded at :307-312). Trim it to the UI's own vocabulary:
+      // the argument text, or undefined when there is none.
+      const args = typeof d.args === 'string' ? d.args.trim() : ''
+      return [{ kind: 'command-run', name: String(d.name), args: args === '' ? undefined : args }]
+    }
+    case 'command/done':
+      return [{ kind: 'command-done', result: d.kind === 'error' ? 'error' : 'success', text: d.text }]
     default:
       return []
   }

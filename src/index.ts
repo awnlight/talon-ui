@@ -16,6 +16,7 @@
 import { ProcessTerminal } from '@earendil-works/pi-tui'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { createController } from './app/controller.js'
+import { createRootAgent } from './boot.js'
 import { createPalette, displayText } from './theme/palette.js'
 
 /** Minimal structural shape of the Cordis plugin context this file needs. */
@@ -24,7 +25,10 @@ export interface Context {
 }
 
 export const name = 'talon-ui'
-export const inject = ['agents', 'sessions'] as const
+// 'llm' joins the required set for the resume preflight's provider check
+// (spec D8); sessionQuery and the projection services stay ctx.get optionals
+// (spec §3.1) — /resume degrades to a notice or a cheaper title ladder.
+export const inject = ['agents', 'sessions', 'userQuestions', 'approval', 'commands', 'llm'] as const
 
 export interface Config { sessionId?: string }
 
@@ -91,20 +95,33 @@ export function apply(ctx: Context, config: Config = {}): void {
   const enabled = process.env.NO_COLOR === undefined
   const anyCtx = ctx as any
 
+  /* v8 ignore start -- live TTY mount: ProcessTerminal + Cordis effect wiring cannot run off-TTY; exercised end-to-end by tests/e2e/tty-smoke (real PTY boot, T2 Task 20) */
   const start = (agent: any): void => {
     anyCtx.effect(() => {
       const terminal = new ProcessTerminal()
       const removeGuards = installProcessGuards(ctx)
       const controller = createController({
-        ctx: agent.ctx ?? ctx,
+        ctx: anyCtx,
         agent,
         terminal,
         palette: createPalette(enabled),
+        userQuestions: anyCtx.userQuestions,
+        commands: anyCtx.commands,
+        agents: anyCtx.agents,
+        createRootAgent: () => createRootAgent(anyCtx),
+        services: {
+          sessionQuery: anyCtx.get('sessionQuery'),
+          sessions: anyCtx.sessions,
+          projections: anyCtx.get('sessionProjections'),
+          projectionCache: anyCtx.get('sessionProjectionCache'),
+          llm: anyCtx.llm,
+        },
         exit: (code) => disposeRootAndExit(ctx, code),
       })
       return () => { removeGuards(); return controller.dispose() }
     }, 'talon-ui')
   }
+  /* v8 ignore stop */
 
   const matches = (agent: any): boolean =>
     (sessionId === undefined || agent.id === sessionId) && anyCtx.agents.roots().includes(agent)

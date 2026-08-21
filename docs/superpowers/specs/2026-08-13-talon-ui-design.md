@@ -145,7 +145,7 @@ const unregister = ctx.userQuestions.registerProvider({
 
 ### 3.5 命令
 
-TUI 自有命令经 `agent.ctx.inject(['commands'], c => c.commands.register(...))` 注册为 agent 作用域。v1 命令集:`/help /model /clear /details /palette /resume /status /agents /exit /quit`(exit/quit 同一 handler 别名)。执行:`ctx.commands.execute(agent, line, signal)`,每次调用独立 AbortController 入集合、teardown 全体 abort;`undefined` 返回渲染 "Unknown command"。`CommandResult = {kind:'success',text?}|{kind:'error',text}`。
+TUI 自有命令经 `agent.ctx.inject(['commands'], c => c.commands.register(...))` 注册为 agent 作用域。D8 进程内 rebind 设计下,注册实际落在插件根 ctx 上(全局)——单 UI 进程使之与 agent 作用域等价(T2 ruling 3 记录在案)。v1 命令集:`/help /model /clear /details /palette /resume /status /agents /exit /quit`(exit/quit 同一 handler 别名)。执行:`ctx.commands.execute(agent, line, signal)`,每次调用独立 AbortController 入集合、teardown 全体 abort;`undefined` 返回渲染 "Unknown command"。`CommandResult = {kind:'success',text?}|{kind:'error',text}`。
 
 ### 3.6 会话列表与 resume
 
@@ -183,7 +183,7 @@ TUI 自有命令经 `agent.ctx.inject(['commands'], c => c.commands.register(...
 | 消息标记 | `▌` 竖线贴边 | `●` + `⎿` 树线 | **加粗下划线角色头,正文零装饰**(拖选复制永不带杂质) |
 | 工具卡片 | 框线块 | 缩进树 | **`◇`运行中/`◆`完成 单行头 + 统一 dim 内文** |
 | 输入区 | 圆角框 | 圆角框 | **单条状态横线 + `❯` 提示符**(无边框 Editor 子类,省 2 行) |
-| 强调色 | 品红/紫 | 橙 | **talon 青**(truecolor 渐变;ANSI 层沿用验证过的表) |
+| 强调色 | 品红/紫 | 橙 | **talon 青**(truecolor 仅限两处品牌例外:wordmark 渐变与 `brand` 文本;ANSI `accent` role 依 D6 保持 95) |
 | 运行指示 | 框内 spinner | spinner+文字 | **提示符原位 glyph 相变**(◌→◍→◉→⚙,呼吸渐隐,零额外行列) |
 
 ### 4.1 转录
