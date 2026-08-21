@@ -56,11 +56,15 @@ export interface ControllerDeps {
   userQuestions: { registerProvider(p: { ask(req: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> }): () => void }
   /** Minimal facet of dsh's `ctx.commands` (spec §3.5): registration for
    * talon's own set (global — Ruling 3), the descriptor list `/help` prints,
-   * and the executor every slash submission goes through. */
+   * and the executor every slash submission goes through. `images` is dsh
+   * 0.1.1-rc.1's composer-attachment slot (positional, before the signal —
+   * verified packages/interaction/commands/src/index.ts execute signature);
+   * talon sends none until T4's image paste, but MUST fill the slot or the
+   * signal lands in it and every dispatch crashes on `signal.aborted`. */
   commands: {
     register(def: CommandDefinition): () => void
     list(agent: unknown): readonly CommandDescriptor[]
-    execute(agent: unknown, line: string, signal: AbortSignal): Promise<unknown>
+    execute(agent: unknown, line: string, images: readonly unknown[], signal: AbortSignal): Promise<unknown>
   }
   /** Minimal facet of dsh's `ctx.agents` (spec §3.6): in-process resume keeps
    * the old agent alive and only moves this UI's binding (Ruling 8). */
@@ -300,7 +304,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     commandRuns.add(controllerAbort)
     executingRun = controllerAbort
     try {
-      void Promise.resolve(deps.commands.execute(bound, line, controllerAbort.signal))
+      void Promise.resolve(deps.commands.execute(bound, line, [], controllerAbort.signal))
         .then((execution) => {
           if (disposed || execution !== undefined) return   // logged results render via durable events (Ruling 5)
           appendLocalNotice({ text: `Unknown command: ${line.trim().split(/\s+/, 1)[0]}`, tone: 'warning' })

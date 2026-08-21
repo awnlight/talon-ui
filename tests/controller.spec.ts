@@ -46,7 +46,7 @@ function fakeCommandService() {
   return {
     register: (_definition: CommandDef): (() => void) => () => {},
     list: (): readonly { name: string; description: string }[] => [],
-    execute: vi.fn(async (_agent: unknown, _line: string, _signal: AbortSignal): Promise<unknown> => ({ commandId: 'c', result: { kind: 'success' } })),
+    execute: vi.fn(async (_agent: unknown, _line: string, _images: readonly unknown[], _signal: AbortSignal): Promise<unknown> => ({ commandId: 'c', result: { kind: 'success' } })),
   }
 }
 
@@ -69,7 +69,7 @@ function dispatchingCommandService() {
       handlers.set(definition.name, () => definition.handler(undefined as never))
       return () => handlers.delete(definition.name)
     },
-    execute: vi.fn(async (_agent: unknown, line: string, signal: AbortSignal): Promise<unknown> => {
+    execute: vi.fn(async (_agent: unknown, line: string, _images: readonly unknown[], signal: AbortSignal): Promise<unknown> => {
       const handler = handlers.get(line.slice(1))
       if (handler === undefined) return undefined
       log.push(`command/run ${line.slice(1)}`)
@@ -399,7 +399,7 @@ describe('controller', () => {
   })
   it('dispose aborts in-flight command signals', async () => {
     let captured: AbortSignal | undefined
-    const { terminal, controller } = setup({ commands: { execute: vi.fn((_a: unknown, _l: string, signal: AbortSignal) => { captured = signal; return new Promise(() => {}) }) } })
+    const { terminal, controller } = setup({ commands: { execute: vi.fn((_a: unknown, _l: string, _images: readonly unknown[], signal: AbortSignal) => { captured = signal; return new Promise(() => {}) }) } })
     await terminal.waitForFrame(0)
     terminal.input('/status')
     terminal.input('\r')

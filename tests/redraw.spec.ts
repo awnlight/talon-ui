@@ -69,7 +69,7 @@ function roundtripCommandService(record: (event: { type: string; data: unknown }
     },
     list: (): readonly { name: string; description: string }[] =>
       [...definitions.values()].map(({ name, description }) => ({ name, description })).sort((a, b) => a.name.localeCompare(b.name)),
-    execute: async (_agent: unknown, line: string, _signal: AbortSignal): Promise<unknown> => {
+    execute: async (_agent: unknown, line: string, _images: readonly unknown[], _signal: AbortSignal): Promise<unknown> => {
       const name = line.trim().slice(1).split(/\s+/, 1)[0]!
       const definition = definitions.get(name)
       if (definition === undefined) return undefined
