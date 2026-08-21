@@ -74,6 +74,9 @@ export class Composer {
 
   setState(state: ComposerState): void { this.state = state }
   setHint(text: string): void { this.hint.setText(this.palette.dim(text)) }
+  /** One-shot toned hint (T2 carryover 3): the next setHint() — every
+   * agent/status transition issues one — restores the dim contract. */
+  flashHint(text: string, tone: 'warning'): void { this.hint.setText(this.palette[tone](text)) }
 
   /** Wire slash-command completion (spec §3.5 discovery). pi-tui asks the
    * provider on every keystroke, so a closure-backed one always offers the

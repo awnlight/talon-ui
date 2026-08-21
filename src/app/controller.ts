@@ -11,7 +11,7 @@ import { registerSessionCommands, registerTalonCommands } from '../backend/comma
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
-import type { Palette } from '../theme/palette.js'
+import { displayText, type Palette } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
 import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
@@ -87,6 +87,10 @@ export interface ControllerDeps {
 
 const HINT_IDLE = 'enter send · shift+enter newline · ctrl+c exit'
 const HINT_RUNNING = 'esc interrupt · ctrl+c interrupt'
+/** Ctrl+D while a turn is running (carryover 3): never a silent swallow. */
+const HINT_INTERRUPT_FIRST = 'Agent is running — press Esc to interrupt, then Ctrl+D to exit.'
+/** The one goodbye line (Ruling 12), written only on the user-exit path. */
+const GOODBYE = (sessionId: string): string => `To resume: dsh --profile talon, then /resume — session ${sessionId}`
 const RESUME_RUNNING = 'Resume is not available while a turn is running.'
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
@@ -311,6 +315,14 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   }
 
   let exitRequested = false
+  // The goodbye (Ruling 12): dim + displayText, straight to the restored
+  // terminal AFTER dispose() ran tui.stop() — user-exit path only, never
+  // plugin teardown. `bound.id` is read here, at exit time, so a D8 rebind
+  // names the session actually on screen.
+  const farewell = (): void => {
+    terminal.write(palette.dim(displayText(GOODBYE(bound.id))) + '\n')
+    exit(0)
+  }
   const requestExit = (): void => {
     if (exitRequested) return
     exitRequested = true
@@ -318,9 +330,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // never do): cancel first, then tear down once the agent is idle.
     if (running) {
       bound.cancel({ kind: 'user' })
-      void bound.whenIdle().then(() => { void dispose().then(() => exit(0)) })
+      void bound.whenIdle().then(() => { void dispose().then(farewell) })
     } else {
-      void dispose().then(() => exit(0))
+      void dispose().then(farewell)
     }
   }
 
@@ -440,6 +452,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     if (matchesKey(data, 'ctrl+l')) { tui.requestRender(true); return { consume: true } }
     if (matchesKey(data, 'ctrl+d') && composer.editor.getText() === '') {
       if (!running) requestExit()
+      // Running: flash the interrupt-first hint (spec §6, carryover 3); the
+      // next agent/status transition restores the normal hint via syncComposer.
+      else { composer.flashHint(HINT_INTERRUPT_FIRST, 'warning'); tui.requestRender() }
       return { consume: true }
     }
     return undefined

@@ -72,6 +72,23 @@ describe('Composer', () => {
     // warning = ANSI 33 → xterm palette index 3 (yellow)
     expect(term.snapshot()).toMatch(/style 0-\d+ fg-3\b/)
   })
+  it('flashHint recolors the hint with the warning tone; setHint restores dim', async () => {
+    const { term, tui, composer } = setup()
+    tui.start()
+    await term.waitForFrame(0)
+    let before = term.frames
+    composer.flashHint('Agent is running — press Esc first', 'warning')
+    tui.requestRender()
+    await term.waitForFrame(before)
+    // warning = ANSI 33 → xterm palette index 3 (yellow)
+    expect(term.snapshot()).toMatch(/style 0-\d+ fg-3\b/)
+    before = term.frames
+    composer.setHint('enter send')
+    tui.requestRender()
+    await term.waitForFrame(before)
+    tui.stop()
+    expect(term.snapshot()).not.toMatch(/fg-3\b/)
+  })
   it('container.invalidate() cascades to the rule component without throwing', () => {
     const { composer } = setup()
     expect(() => composer.container.invalidate()).not.toThrow()

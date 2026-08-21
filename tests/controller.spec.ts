@@ -101,6 +101,7 @@ function fakeSessionDeps() {
 // composer.spec.ts's own fg-13/fg-3 convention).
 function setup(overrides: {
   enabled?: boolean
+  cols?: number
   commands?: Partial<ReturnType<typeof fakeCommandService>>
   agents?: ControllerDeps['agents']
   createRootAgent?: ControllerDeps['createRootAgent']
@@ -109,7 +110,7 @@ function setup(overrides: {
   const ctx = fakeCtx()
   const agent = fakeAgent()
   agent.ctx = ctx
-  const terminal = new HeadlessTerminal(60, 14)
+  const terminal = new HeadlessTerminal(overrides.cols ?? 60, 14)
   const exit = vi.fn()
   // This file doesn't exercise user-questions flows (see tests/questions.spec.ts) — a no-op stub satisfies ControllerDeps.
   const userQuestions = { registerProvider: () => () => {} }
@@ -190,6 +191,41 @@ describe('controller', () => {
     terminal.input('\x04')
     await new Promise((r) => setTimeout(r, 10))
     expect(exit).toHaveBeenCalledTimes(1)
+    await controller.dispose()
+  })
+  it('user exit prints the goodbye line after teardown, before exit(0)', async () => {
+    const { terminal, exit, controller } = setup()
+    await terminal.waitForFrame(0)
+    terminal.input('\x04')                       // idle + empty → requestExit
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    const snap = terminal.snapshot()
+    expect(snap).toContain('stopped=1')
+    expect(snap).toContain('To resume: dsh --profile talon, then /resume — session main')
+    await controller.dispose()
+  })
+  it('plugin teardown prints NO goodbye', async () => {
+    const { terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    await controller.dispose()
+    expect(terminal.snapshot()).not.toContain('To resume:')
+  })
+  it('Ctrl+D while running flashes the interrupt-first hint instead of exiting (carryover 3)', async () => {
+    // 80 cols: the flashed hint is 63 columns wide — at the default 60 the
+    // Text component would word-wrap it across two buffer rows and the
+    // single-row toContain below could never match.
+    const { ctx, agent, terminal, exit, controller } = setup({ cols: 80 })
+    await terminal.waitForFrame(0)
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    const before = terminal.frames
+    terminal.input('\x04')
+    await terminal.waitForFrame(before)
+    expect(exit).not.toHaveBeenCalled()
+    expect(terminal.snapshot()).toContain('press Esc to interrupt, then Ctrl+D to exit')
+    agent.status = 'idle'
+    ctx.emit('agent/status', { agent, status: 'idle' })
+    await terminal.waitForFrame(terminal.frames)
+    expect(terminal.snapshot()).not.toContain('press Esc to interrupt')
     await controller.dispose()
   })
   it('Esc cancels only while running', async () => {

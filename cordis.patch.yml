@@ -32,6 +32,11 @@
         writeEveryEvents: 200
         writeIntervalMs: 5000
 
+    # sessionId pairing law (T2 carryover 2): set `sessionId` on BOTH rows or
+    # NEITHER. talon-boot mints a fresh UUID when unset and talon-ui binds the
+    # first root agent, so the defaults compose — but a single-sided pin binds
+    # nothing (a pinned boot the UI ignores, or a UI waiting for an id no boot
+    # creates).
     - id: talon-boot
       name: 'talon-ui/boot'
 
