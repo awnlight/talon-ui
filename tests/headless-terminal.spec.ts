@@ -100,6 +100,14 @@ describe('HeadlessTerminal', () => {
     expect(term.snapshot()).toMatch(/"\s~$/m)
   })
 
+  it('counts ED3 scrollback wipes', () => {
+    const t = new HeadlessTerminal(20, 6)
+    t.start(() => {}, () => {})
+    expect(t.scrollbackWipes).toBe(0)
+    t.write('hello \x1b[3J world \x1b[3J')
+    expect(t.scrollbackWipes).toBe(2)
+  })
+
   it('cellLabel and themeViolations recognize every fg/bg color class and strikethrough', async () => {
     const term = new HeadlessTerminal(40, 10)
     const rows = [

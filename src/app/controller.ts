@@ -198,6 +198,18 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
    * transcript they paint into, and the per-turn scratch state change. The
    * old agent stays alive and simply stops being rendered. */
   function bindAgent(next: AgentFacet): void {
+    // The screen transition (D10④, Task 19): a rebind swaps the WHOLE UI, so
+    // diffing new-against-old flags rows above the viewport, and pi-tui's only
+    // recovery there is fullRender(true) — the ED3 scrollback wipe (verified
+    // tui-main-screen.js:346-350). Instead, finish the old screen the way
+    // tui.stop() does (tui-main-screen.js:81-92: park the cursor on a fresh
+    // row below it) and hand the renderer a first-render baseline, so the new
+    // session's UI APPENDS and the old screen scrolls into history intact.
+    const screen = tui.captureRenderState()
+    if (screen.previousLines.length > 0) {
+      terminal.write(` \x1b[${screen.previousLines.length - screen.hardwareCursorRow}B\r\n`)
+    }
+    tui.restoreRenderState({ previousLines: [], previousWidth: 0, previousHeight: 0, cursorRow: 0, hardwareCursorRow: 0, maxLinesRendered: 0, previousViewportTop: 0 })
     bound = next
     running = next.status === 'running'
     pendingCalls.clear()

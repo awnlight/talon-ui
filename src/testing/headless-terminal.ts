@@ -20,6 +20,7 @@ export class HeadlessTerminal implements Terminal {
   private progressActive = false
   private cursorHidden = false
   private frameCount = 0
+  private wipes = 0
   private waiters: { after: number; resolve(): void }[] = []
 
   constructor(private readonly cols = 100, private readonly rowCount = 36) {
@@ -27,6 +28,10 @@ export class HeadlessTerminal implements Terminal {
   }
 
   get frames(): number { return this.frameCount }
+
+  /** ED3 (`\x1b[3J`) occurrences across everything written — the signature of
+   * pi-tui's full-redraw scrollback wipe (D10; gated by tests/redraw.spec.ts). */
+  get scrollbackWipes(): number { return this.wipes }
 
   waitForFrame(after: number, timeoutMs = 2000): Promise<void> {
     if (this.frameCount > after) return Promise.resolve()
@@ -56,6 +61,9 @@ export class HeadlessTerminal implements Terminal {
   stop(): void { this.stopped += 1; this.inputHandler = undefined }
   async drainInput(): Promise<void> {}
   write(data: string): void {
+    // Counted on the RAW written stream, before the emulator parses it: the
+    // wipe is a property of what the TUI EMITS, not of post-parse state.
+    this.wipes += (data.split('\x1b[3J').length - 1)
     // @xterm/headless parses asynchronously (write's 2nd arg is a completion
     // callback per its typings). Frame completion must wait for that callback
     // — otherwise waitForFrame() can resolve before the buffer reflects the
