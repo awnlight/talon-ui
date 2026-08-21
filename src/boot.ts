@@ -109,11 +109,42 @@ export async function createRootAgent(ctx: BootContext, sessionId?: string): Pro
   const id = SessionId(sessionId ?? `session-${crypto.randomUUID()}`)
   const existing = ctx.agents.roots().find(agent => agent.id === id)
   if (existing) return { agent: existing }
-  // Model selection: dsh-base's agent-default-model row supplies the
-  // transport-independent default (settings-overridable). Without it the
-  // request waterfall has no provider/model and every turn errors — fail
-  // loud naming the missing row instead (dsh-headless reads the same
-  // service, packages/bundle/headless/src/index.ts:101-118).
+  return await ctx.agents.create({
+    sessionId: id,
+    meta: { cwd: process.cwd() },
+    ...(await modelComposition(ctx)),
+  })
+}
+
+/**
+ * Resume a persisted session with the same model composition `createRootAgent`
+ * uses. dsh does not rehydrate per-agent options from the session log
+ * (`ResumeAgentOptions.agentOptions` is runtime-only), and this composition's
+ * request waterfall supplies no provider/model fallback (see
+ * `modelComposition`), so a bare `agents.resume()` yields an agent whose every
+ * turn errors with "has no provider/model" — found live in the T2 final
+ * acceptance run. The caller binds the returned agent, exactly as with
+ * `createRootAgent`.
+ */
+export async function resumeRootAgent(ctx: BootContext, resumeSessionId: string): Promise<{ agent: Agent }> {
+  return await ctx.agents.resume({
+    resumeSessionId: SessionId(resumeSessionId),
+    ...(await modelComposition(ctx)),
+  })
+}
+
+/**
+ * The model selection shared by create and resume: dsh-base's
+ * agent-default-model row supplies the transport-independent default
+ * (settings-overridable). Without it the request waterfall has no
+ * provider/model and every turn errors — fail loud naming the missing row
+ * instead (dsh-headless reads the same service,
+ * packages/bundle/headless/src/index.ts:101-118).
+ */
+async function modelComposition(ctx: BootContext): Promise<{
+  agentOptions: { provider: string; model: string }
+  setup: (agentCtx: unknown) => void
+}> {
   const defaultModel = ctx.get('agentDefaultModel') as
     | { currentSelection(): { provider: string; model: string } }
     | undefined
@@ -128,14 +159,12 @@ export async function createRootAgent(ctx: BootContext, sessionId?: string): Pro
   const { installModelSelection } = (await import('@deepseek-ai/dsh-agent')) as unknown as {
     installModelSelection(agentCtx: unknown, ref: ModelSelectionRef): () => void
   }
-  return await ctx.agents.create({
-    sessionId: id,
-    meta: { cwd: process.cwd() },
+  return {
     agentOptions: { provider: selection.provider, model: selection.model },
     setup: (agentCtx) => {
       // Same ref the /model picker will mutate later (spec §3.7).
       const selected: ModelSelectionRef = { current: selection, assembled: undefined }
       installModelSelection(agentCtx, selected)
     },
-  })
+  }
 }

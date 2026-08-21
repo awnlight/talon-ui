@@ -16,7 +16,7 @@
 import { ProcessTerminal } from '@earendil-works/pi-tui'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { createController } from './app/controller.js'
-import { createRootAgent } from './boot.js'
+import { createRootAgent, resumeRootAgent } from './boot.js'
 import { createPalette, displayText } from './theme/palette.js'
 
 /** Minimal structural shape of the Cordis plugin context this file needs. */
@@ -107,7 +107,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         palette: createPalette(enabled),
         userQuestions: anyCtx.userQuestions,
         commands: anyCtx.commands,
-        agents: anyCtx.agents,
+        // Not the bare registry: resume must carry the same model composition
+        // the boot uses (dsh does not rehydrate agentOptions from the log, and
+        // this composition's request waterfall supplies no provider/model
+        // fallback), or every turn on the resumed agent errors — see
+        // resumeRootAgent.
+        agents: { resume: (opts: { resumeSessionId: string }) => resumeRootAgent(anyCtx, opts.resumeSessionId) },
         createRootAgent: () => createRootAgent(anyCtx),
         services: {
           sessionQuery: anyCtx.get('sessionQuery'),

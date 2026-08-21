@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as boot from '../src/boot.ts'
-import { apply, createRootAgent } from '../src/boot.ts'
+import { apply, createRootAgent, resumeRootAgent } from '../src/boot.ts'
 
 describe('talon-boot plugin shape', () => {
   it('exports Cordis plugin surface without default export', () => {
@@ -24,11 +24,14 @@ vi.mock('../../deepseek-harness/packages/core/agent/lib/types/index.d.ts', () =>
 
 function bootCtx(overrides: Partial<{ roots: unknown[]; services: Record<string, unknown> }> = {}) {
   const created: unknown[] = []
+  const resumed: unknown[] = []
   const ctx = {
     created,
+    resumed,
     agents: {
       roots: () => overrides.roots ?? [],
       create: vi.fn(async (opts: unknown) => { created.push(opts); return { agent: { id: (opts as any).sessionId }, dispose: async () => {} } }),
+      resume: vi.fn(async (opts: unknown) => { resumed.push(opts); return { agent: { id: (opts as any).resumeSessionId }, dispose: async () => {} } }),
     },
     get: (name: string) => (overrides.services ?? {
       agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) },
@@ -77,6 +80,20 @@ describe('talon-boot run()', () => {
     const handle = await createRootAgent(ctx as never, 'fresh')
     expect(handle.agent.id).toBe('fresh')
     expect(ctx.agents.create).toHaveBeenCalledOnce()
+  })
+  it('resumeRootAgent resumes with the same model composition the boot uses', async () => {
+    // The T2 final-acceptance live finding: dsh does not rehydrate
+    // agentOptions from the log and the composition's request waterfall
+    // supplies no provider/model, so resume must pass both — exactly like
+    // createRootAgent — or every turn on the resumed agent errors.
+    const ctx = bootCtx()
+    const handle = await resumeRootAgent(ctx as never, 'session-old')
+    expect(handle.agent.id).toBe('session-old')
+    expect(ctx.agents.resume).toHaveBeenCalledOnce()
+    const opts = (ctx.resumed[0] as { resumeSessionId: string; agentOptions: { provider: string; model: string }; setup: (c: unknown) => void })
+    expect(opts.resumeSessionId).toBe('session-old')
+    expect(opts.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })
+    opts.setup({}) // exercises installModelSelection wiring
   })
   it('fails loud (stderr + exit 1) when agentDefaultModel is missing', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
