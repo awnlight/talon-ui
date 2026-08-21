@@ -2,6 +2,8 @@
 
 A terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) agents, shipped as a dsh **plugin bundle**. Talon renders a full interactive session — streaming transcript, tool approvals, user questions, slash commands, and cross-workspace session resume — inside your terminal, on top of an unmodified harness checkout.
 
+![A talon session: role headers, context-injection cards, and a streaming reply](docs/assets/talon.png)
+
 > 中文文档见 [README.zh.md](README.zh.md).
 
 ## Features

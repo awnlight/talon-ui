@@ -2,6 +2,8 @@
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh)agent 的终端 UI,以 dsh **插件 bundle** 形式交付。Talon 在不改动 harness 检出的前提下,在终端里呈现完整的交互式会话——流式转录、工具审批、用户提问、斜杠命令、跨工作区会话恢复。
 
+![talon 会话:角色头、上下文注入卡片与流式回复](docs/assets/talon.png)
+
 > English documentation: [README.md](README.md).
 
 ## 功能
