@@ -1,7 +1,13 @@
 {
   "name": "talon-ui",
   "version": "0.1.0",
-  "description": "Talon: a terminal UI for DeepSeek Harness agents",
+  "description": "Talon: a terminal UI for DeepSeek Harness agents (dsh plugin)",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "terminal-ui",
+    "tui"
+  ],
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
