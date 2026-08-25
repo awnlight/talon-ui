@@ -1,0 +1,34 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @14,0
+0| "You"
+  style 0-2 bold underline
+1| "Show the fix."
+2| <blank>
+3| "talon"
+  style 0-4 fg-13 bold underline
+4| "Checking the diff."
+  style 0-17 dim italic
+5| "Fix"
+  style 0-2 bold underline
+6| <blank>
+7| "```ts"
+  style 0-4 dim
+8| "  const n = 1 // count"
+  style 2-6 fg-6
+  style 12-12 fg-3
+  style 14-21 dim
+9| "```"
+  style 0-2 dim
+10| <blank>
+11| "- fast"
+  style 0-1 dim
+12| "- safe"
+  style 0-1 dim
+  style 2-5 bold
+13| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+14| <blank>
+15| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+16-17| <blank>

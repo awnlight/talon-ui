@@ -12,6 +12,7 @@ export const CHECKPOINTS = [
   'slash-autocomplete',
   'resume-selector',
   'context-card',
+  'md-settled',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

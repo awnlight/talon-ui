@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -228,6 +228,34 @@ describe('talon snapshots', () => {
     terminal.input('\x1b')                // empty query: esc cancels the panel
     await expect(picked).resolves.toBeUndefined()
     await terminal.waitForFrame(before)
+    await controller.dispose()
+  })
+
+  it('md-settled', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 18)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // A settled assistant message with markdown source (Task 2): heading,
+    // highlighted ts fence, list with inline bold — reasoning stays plain
+    // dim+italic above it (Ruling 16).
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Show the fix.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [
+      { type: 'reasoning', text: 'Checking the diff.' },
+      { type: 'text', text: '# Fix\n```ts\nconst n = 1 // count\n```\n- fast\n- **safe**' },
+    ] } } })
+    ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('md-settled', terminal)
+
     await controller.dispose()
   })
 
