@@ -59,12 +59,34 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
     case 'assistant/message':
       return [{ kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] }]
     case 'tool/call': {
+      // dsh records `arguments` as the model's RAW unparsed JSON string
+      // (session types.d.ts:291). Object-shaped fixtures keep working: they
+      // are re-encoded so `rawArguments` is always a string the card can show.
       const raw = d.arguments
+      const rawArguments = typeof raw === 'string' ? raw : raw === undefined ? '' : JSON.stringify(raw)
       const args = typeof raw === 'string'
-        ? (() => { try { return JSON.parse(raw) as Record<string, unknown> } catch { return undefined } })()
-        : (raw as Record<string, unknown> | undefined)
-      const command = args?.command
-      return [{ kind: 'tool-call', callId: String(d.callId ?? ''), name: String(d.name ?? ''), preview: typeof command === 'string' ? command : undefined }]
+        ? (() => { try { return JSON.parse(raw) as unknown } catch { return undefined } })()
+        : (raw as unknown)
+      return [{ kind: 'tool-call-card', turn: d.turn, step: d.step, callId: String(d.callId ?? ''), name: String(d.name ?? ''), args, rawArguments }]
+    }
+    case 'tool/result': {
+      // ToolResultMessage.content is exactly one ToolResultBlock, and THAT
+      // block's `content` carries the model-facing result blocks (llm
+      // message.d.ts:140-144). Flattening follows dsh's own presenter: text
+      // verbatim, anything else pretty-printed JSON, and an empty result
+      // named by its failure identity (ui-cordis client.js:32-36).
+      const block = (d.message as { content?: unknown[] } | undefined)?.content?.[0] as
+        { toolCallId?: string; content?: ContentBlockLike[]; isError?: boolean } | undefined
+      const error = d.error as { name?: string; code?: string } | undefined
+      const text = (block?.content ?? []).map((b) => (b.type === 'text' ? b.text ?? '' : JSON.stringify(b, null, 2))).join('\n')
+      return [{
+        kind: 'tool-result-card',
+        callId: String(block?.toolCallId ?? ''),
+        isError: block?.isError === true || error !== undefined,
+        errorCode: error?.code,
+        resultText: text !== '' || error === undefined ? text : `${error.name}: ${error.code}`,
+        meta: d.meta,
+      }]
     }
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]

@@ -18,6 +18,7 @@ import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
+import { commandArg } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
 /** The slice of dsh's `Agent` the UI drives. Named (Task 16) because the
@@ -178,12 +179,12 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // Tool-call previews, keyed by callId, so an approval prompt for that call
   // can enrich its header (spec D9); cleared per turn — a callId is only
   // ever relevant to the turn that issued it.
-  const pendingCalls = new Map<string, string>()
+  const pendingCalls = new Map<string, string | undefined>()
 
   detachers.push(ctx.on('session/event', (session: unknown, event: { type: string; data: unknown; time?: number }) => {
     if (session !== bound.session || disposed) return
     for (const appEvent of translateSessionEvent(event)) {
-      if (appEvent.kind === 'tool-call' && appEvent.preview !== undefined) pendingCalls.set(appEvent.callId, appEvent.preview)
+      if (appEvent.kind === 'tool-call-card') pendingCalls.set(appEvent.callId, commandArg(appEvent.args))
       if (appEvent.kind === 'turn-end') pendingCalls.clear()
       transcript.apply(appEvent)
     }

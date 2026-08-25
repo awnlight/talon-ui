@@ -15,7 +15,12 @@ export type AppEvent =
   | { kind: 'step-end'; turn: number; step: number; time: number | undefined }
   | { kind: 'stream-delta'; turn: number; step: number; index: number; block: 'text' | 'reasoning'; text: string }
   | { kind: 'stream-settle'; turn: number; step: number; content: ContentBlockLike[] }
-  | { kind: 'tool-call'; callId: string; name: string; preview: string | undefined }
+  // One tool card, in two halves (D12): the call opens it, the result settles
+  // it in place. `args` is the parsed arguments object when the model's raw
+  // JSON parses, `undefined` when it does not — `rawArguments` always carries
+  // the verbatim string, so an expanded card can show exactly what was sent.
+  | { kind: 'tool-call-card'; turn: number; step: number; callId: string; name: string; args: unknown; rawArguments: string }
+  | { kind: 'tool-result-card'; callId: string; isError: boolean; errorCode: string | undefined; resultText: string; meta: unknown }
   | { kind: 'approval-asked'; id: string; toolName: string }
   | { kind: 'approval-decided'; id: string; outcome: string }
   | { kind: 'command-run'; name: string; args: string | undefined }

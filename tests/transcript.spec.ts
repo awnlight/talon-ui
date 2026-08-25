@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { AppEvent } from '../src/backend/app-events.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { Transcript } from '../src/ui/transcript/transcript.ts'
 import { UserMessageCell } from '../src/ui/transcript/cells.ts'
 import { StreamingAssistantCell } from '../src/ui/transcript/streaming.ts'
+import { ToolCardCell } from '../src/ui/transcript/tool-cards.ts'
 
 const p = createPalette(false)
 const render = (t: Transcript) => t.container.render(80).join('\n')
@@ -97,11 +99,6 @@ describe('Transcript', () => {
     t.apply({ kind: 'approval-decided', id: 'ghost', outcome: 'rejected' })
     expect(t.container.render(60).join('\n')).toContain('◆ approval · (unknown tool) · rejected')
   })
-  it('tool-call events are transcript-ignored (cards land in T3)', () => {
-    const t = new Transcript(createPalette(false))
-    t.apply({ kind: 'tool-call', callId: 'c1', name: 'bash', preview: 'ls -la' })
-    expect(t.container.render(60).length).toBe(0)
-  })
   it('echoes command/run as one dim line, with and without args', () => {
     const t = new Transcript(createPalette(false))
     t.apply({ kind: 'command-run', name: 'status', args: undefined })
@@ -128,6 +125,71 @@ describe('Transcript', () => {
     const t = new Transcript(createPalette(false))
     t.apply({ kind: 'notice', notice: { text: 'Unknown command: /nope', tone: 'warning' } })
     expect(t.container.render(60).join('\n')).toContain('Unknown command: /nope')
+  })
+})
+
+describe('Transcript tool cards (keyed by callId, ruling 5)', () => {
+  const cards = (t: Transcript): ToolCardCell[] => t.container.children.filter((c) => c instanceof ToolCardCell)
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+  const registered = (t: Transcript): number => t.container.children.reduce(
+    (n, c) => n + (c instanceof ToolCardCell || c instanceof UserMessageCell ? c.contentLineCount() : 1), 0)
+  const call = (callId: string, name: string, args: unknown): AppEvent =>
+    ({ kind: 'tool-call-card', turn: 1, step: 1, callId, name, args, rawArguments: JSON.stringify(args) })
+  const result = (callId: string, over: Partial<Extract<AppEvent, { kind: 'tool-result-card' }>> = {}): AppEvent =>
+    ({ kind: 'tool-result-card', callId, isError: false, errorCode: undefined, resultText: 'out', meta: undefined, ...over })
+
+  it('appends a pending card on the call and settles the SAME cell in place on the result', () => {
+    const t = new Transcript(p)
+    t.apply(call('c1', 'bash', { command: 'pnpm test' }))
+    const cell = cards(t)[0]!
+    expect(render(t)).toContain('◇ bash · pnpm test')
+
+    t.apply(result('c1', { resultText: '12 passed' }))
+    expect(cards(t)).toEqual([cell])                       // mutated in place — no second card
+    expect(render(t)).toContain('◆ bash · pnpm test')
+    expect(render(t)).toContain('12 passed')
+  })
+
+  it('appends an already-settled orphan card for an unknown callId (the log is the truth)', () => {
+    const t = new Transcript(p)
+    t.apply(result('ghost', { resultText: 'late output', isError: true, errorCode: 'timeout' }))
+    expect(cards(t).length).toBe(1)
+    expect(render(t)).toContain('◆ tool')
+    expect(render(t)).toContain('late output')
+    expect(accounted(t)).toBe(registered(t))
+  })
+
+  it('leaves a call with no result on its ◇ head, and turn-end drops the pending reference', () => {
+    const t = new Transcript(p)
+    t.apply(call('c1', 'bash', { command: 'sleep 99' }))
+    t.apply({ kind: 'turn-end', turn: 1, notice: undefined })
+    expect(render(t)).toContain('◇ bash · sleep 99')       // still running, per the log
+
+    t.apply(result('c1', { resultText: 'too late' }))      // the reference is gone: an orphan, not a settle
+    expect(cards(t).length).toBe(2)
+    expect(render(t)).toContain('◇ bash · sleep 99')
+    expect(render(t)).toContain('too late')
+  })
+
+  it('keeps the mount-cap accounting honest across call → settle', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'go' })
+    t.apply(call('c1', 'bash', { command: 'ls' }))
+    expect(accounted(t)).toBe(registered(t))
+    t.apply(result('c1', { resultText: 'a\nb\nc' }))
+    expect(accounted(t)).toBe(registered(t))
+    expect(accounted(t)).toBe(2 + 1 + 4)                   // user cell + spacer + (head + 3 body lines)
+  })
+
+  it('forgets a pending card the mount cap evicted, so its late result lands as an orphan', () => {
+    const t = new Transcript(p, { mountCapLines: 12 })
+    t.apply(call('c1', 'bash', { command: 'ls' }))
+    for (let i = 0; i < 10; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })
+    expect(cards(t).length).toBe(0)                        // trimmed away
+    t.apply(result('c1', { resultText: 'orphaned' }))
+    expect(cards(t).length).toBe(1)
+    expect(render(t)).toContain('orphaned')
+    expect(accounted(t)).toBe(registered(t))
   })
 })
 

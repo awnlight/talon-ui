@@ -73,31 +73,71 @@ describe('translateSessionEvent', () => {
     const out = translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: undefined, text: undefined } } })
     expect(out).toEqual([{ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: '' }])
   })
-  it('translates tool/call with a bash command preview', () => {
-    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c1', name: 'bash', arguments: { command: 'ls -la' } } }))
-      .toEqual([{ kind: 'tool-call', callId: 'c1', name: 'bash', preview: 'ls -la' }])
+  it('translates tool/call into a card event: parsed args plus the verbatim raw string (real dsh wire shape)', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { turn: 1, step: 2, callId: 'c1', name: 'bash', arguments: '{"command":"ls -la"}' } }))
+      .toEqual([{ kind: 'tool-call-card', turn: 1, step: 2, callId: 'c1', name: 'bash', args: { command: 'ls -la' }, rawArguments: '{"command":"ls -la"}' }])
   })
-  it('translates tool/call without a string command to an undefined preview', () => {
-    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c2', name: 'read', arguments: { path: '/x' } } }))
-      .toEqual([{ kind: 'tool-call', callId: 'c2', name: 'read', preview: undefined }])
-  })
-  it('tool/call falls back to empty callId/name and an undefined preview when fields are missing', () => {
-    expect(translateSessionEvent({ type: 'tool/call', data: {} }))
-      .toEqual([{ kind: 'tool-call', callId: '', name: '', preview: undefined }])
-  })
-  it('tool/call parses a JSON-string arguments payload for the command preview (real dsh wire shape)', () => {
-    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c3', name: 'bash', arguments: '{"command":"ls -la"}' } }))
-      .toEqual([{ kind: 'tool-call', callId: 'c3', name: 'bash', preview: 'ls -la' }])
-  })
-  it('tool/call with malformed JSON-string arguments yields an undefined preview without throwing', () => {
-    const malformed = { type: 'tool/call', data: { callId: 'c4', name: 'bash', arguments: '{"command": <bad' } }
+  it('tool/call with malformed JSON arguments keeps the raw string and leaves args undefined', () => {
+    const malformed = { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c4', name: 'bash', arguments: '{"command": <bad' } }
     expect(() => translateSessionEvent(malformed)).not.toThrow()
     expect(translateSessionEvent(malformed))
-      .toEqual([{ kind: 'tool-call', callId: 'c4', name: 'bash', preview: undefined }])
+      .toEqual([{ kind: 'tool-call-card', turn: 1, step: 1, callId: 'c4', name: 'bash', args: undefined, rawArguments: '{"command": <bad' }])
   })
-  it('tool/call still accepts object-shaped arguments fixtures (pre-existing behavior preserved)', () => {
-    expect(translateSessionEvent({ type: 'tool/call', data: { callId: 'c5', name: 'bash', arguments: { command: 'pwd' } } }))
-      .toEqual([{ kind: 'tool-call', callId: 'c5', name: 'bash', preview: 'pwd' }])
+  it('tool/call still accepts object-shaped arguments fixtures, re-encoding the raw string', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: { turn: 1, step: 1, callId: 'c5', name: 'bash', arguments: { command: 'pwd' } } }))
+      .toEqual([{ kind: 'tool-call-card', turn: 1, step: 1, callId: 'c5', name: 'bash', args: { command: 'pwd' }, rawArguments: '{"command":"pwd"}' }])
+  })
+  it('tool/call falls back to empty callId/name/raw arguments when fields are missing', () => {
+    expect(translateSessionEvent({ type: 'tool/call', data: {} }))
+      .toEqual([{ kind: 'tool-call-card', turn: undefined, step: undefined, callId: '', name: '', args: undefined, rawArguments: '' }])
+  })
+  it('translates tool/result: text blocks verbatim, correlated by the block callId', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: { turn: 1, step: 1, message: { content: [
+      { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }], isError: false },
+    ] } } })).toEqual([{ kind: 'tool-result-card', callId: 'c1', isError: false, errorCode: undefined, resultText: 'first\nsecond', meta: undefined }])
+  })
+  it('tool/result pretty-prints a non-text result block (dsh ui-cordis resultText precedent)', () => {
+    const image = { type: 'image', attachment: { id: 'a1' } }
+    const out = translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'head' }, image] },
+    ] } } })
+    expect(out).toEqual([{ kind: 'tool-result-card', callId: 'c2', isError: false, errorCode: undefined, resultText: `head\n${JSON.stringify(image, null, 2)}`, meta: undefined }])
+  })
+  it('tool/result carries the failure identity and forces isError', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c3', content: [{ type: 'text', text: 'boom' }] },
+    ] }, error: { name: 'ToolExecutionError', code: 'timeout' } } }))
+      .toEqual([{ kind: 'tool-result-card', callId: 'c3', isError: true, errorCode: 'timeout', resultText: 'boom', meta: undefined }])
+  })
+  it('tool/result with an empty content and an error names it `<name>: <code>`', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c4', content: [], isError: true },
+    ] }, error: { name: 'ToolExecutionError', code: 'interrupted' } } }))
+      .toEqual([{ kind: 'tool-result-card', callId: 'c4', isError: true, errorCode: 'interrupted', resultText: 'ToolExecutionError: interrupted', meta: undefined }])
+  })
+  it('tool/result marks a block-level isError with no failure identity', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c5', content: [{ type: 'text', text: 'refused' }], isError: true },
+    ] } } }))
+      .toEqual([{ kind: 'tool-result-card', callId: 'c5', isError: true, errorCode: undefined, resultText: 'refused', meta: undefined }])
+  })
+  it('tool/result passes meta through untouched (the producing tool owns its shape)', () => {
+    const meta = { diffs: [{ path: '/a', oldText: null, newText: 'x' }] }
+    const out = translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c6', content: [{ type: 'text', text: 'ok' }] },
+    ] }, meta } })
+    expect(out[0]).toMatchObject({ kind: 'tool-result-card', callId: 'c6', meta })
+    expect((out[0] as { meta: unknown }).meta).toBe(meta)
+  })
+  it('tool/result with no message at all stays an empty, successful, uncorrelated card event', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: {} }))
+      .toEqual([{ kind: 'tool-result-card', callId: '', isError: false, errorCode: undefined, resultText: '', meta: undefined }])
+  })
+  it('tool/result with a text block missing its text yields an empty string for that block', () => {
+    expect(translateSessionEvent({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c7', content: [{ type: 'text' }] },
+    ] } } }))
+      .toEqual([{ kind: 'tool-result-card', callId: 'c7', isError: false, errorCode: undefined, resultText: '', meta: undefined }])
   })
   it('translates the approval audit pair', () => {
     expect(translateSessionEvent({ type: 'approval/asked', data: { id: 'a1', toolName: 'bash', callId: 'c1' } }))

@@ -7,6 +7,7 @@ import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
 import { ApprovalAuditCell, ContextCardCell, NoticeCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
+import { ORPHAN_CARD_NAME, ToolCardCell } from './tool-cards.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
 
@@ -35,6 +36,11 @@ export class Transcript {
   // matching approval-decided which tool it was asked about (spec D9's
   // replay-safe id correlation; the pair need not be contiguous).
   private readonly askedTools = new Map<string, string>()
+  // Pending tool cards by callId (ruling 5): a result settles its card in
+  // place. A callId leaves the map when it settles, when its turn ends, or
+  // when the mount cap evicts its card — any later result then appends an
+  // orphan card rather than settling something unmounted.
+  private readonly pendingCards = new Map<string, ToolCardCell>()
 
   constructor(private readonly palette: Palette, options?: { mountCapLines?: number }) {
     this.cap = options?.mountCapLines ?? 5000
@@ -100,11 +106,35 @@ export class Transcript {
           { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
         }
         this.live = undefined
+        this.pendingCards.clear() // a call with no result keeps its ◇ head: that is what the log says happened
         break
       case 'turn-start': case 'step-start': case 'step-end':
         break
-      case 'tool-call':
-        break // cards land in T3; the controller consumes previews
+      case 'tool-call-card': {
+        this.spaceBeforeNewCell()
+        const c = new ToolCardCell({ callId: event.callId, name: event.name, args: event.args, rawArguments: event.rawArguments }, this.palette)
+        this.addChild(c, c.contentLineCount())
+        this.pendingCards.set(event.callId, c)
+        break
+      }
+      case 'tool-result-card': {
+        const result = { isError: event.isError, errorCode: event.errorCode, resultText: event.resultText, meta: event.meta }
+        const card = this.pendingCards.get(event.callId)
+        if (card) {
+          this.pendingCards.delete(event.callId)
+          const before = card.contentLineCount()
+          card.settle(result)
+          this.mountedLineCount += card.contentLineCount() - before
+        } else {
+          // No mounted call to settle — render the result on its own settled
+          // card rather than dropping it (the log is the truth).
+          this.spaceBeforeNewCell()
+          const orphan = new ToolCardCell({ callId: event.callId, name: ORPHAN_CARD_NAME, args: undefined, rawArguments: '' }, this.palette)
+          orphan.settle(result)
+          this.addChild(orphan, orphan.contentLineCount())
+        }
+        break
+      }
       case 'approval-asked':
         this.askedTools.set(event.id, event.toolName)
         break
@@ -164,6 +194,7 @@ export class Transcript {
       /* v8 ignore next -- defensive: unreachable given the while-guard above. `this.marker` is at most one instance, so children.length > 2 always leaves at least one non-marker child for find() to return. */
       if (!first) break
       this.container.removeChild(first)
+      if (first instanceof ToolCardCell) this.pendingCards.delete(first.callId)
       this.mountedLineCount -= this.lineCountOf(first)
       if (!this.marker) {
         this.marker = new Text(this.palette.dim(TRIM_MARKER), 0, 0)
@@ -175,6 +206,7 @@ export class Transcript {
 
   private lineCountOf(c: Component): number {
     if (c instanceof StreamingAssistantCell) return c.lineCount()
+    if (c instanceof ToolCardCell) return c.contentLineCount()
     if (c instanceof UserMessageCell || c instanceof NoticeCell) return c.contentLineCount()
     return SPACER_LINES // the only remaining child type trim() ever removes
   }
