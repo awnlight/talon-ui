@@ -8,6 +8,14 @@
     "terminal-ui",
     "tui"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NSOiO/talon-ui.git"
+  },
+  "homepage": "https://github.com/NSOiO/talon-ui#readme",
+  "bugs": {
+    "url": "https://github.com/NSOiO/talon-ui/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
