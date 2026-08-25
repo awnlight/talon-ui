@@ -13,6 +13,7 @@ export const CHECKPOINTS = [
   'resume-selector',
   'context-card',
   'md-settled',
+  'md-stream',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -256,6 +256,43 @@ describe('talon snapshots', () => {
     await terminal.waitForFrame(before)
     await checkpoint('md-settled', terminal)
 
+    await controller.dispose()
+  })
+
+  it('md-stream', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 18)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // A frame frozen MID-STREAM (Task 3): fixed text deltas cut a list item
+    // in half across chunks and leave a ts fence OPEN — the live Markdown
+    // rebuild renders bullets + the highlighted partial fence body, with
+    // trimPartialClosingFences keeping the open fence stable. No
+    // assistant/message before the checkpoint: this IS the live path.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Stream the fix.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'Sketching the patch.' } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 1, text: '# Fix\n\n- fast\n- sa' } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 1, text: 'fe\n\n```ts\nconst n = 1 // count\nlet m = ' } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('md-stream', terminal)
+
+    // Settle and close the turn after the frozen frame, so dispose() finds a
+    // quiet transcript (mirrors conversation-roundtrip).
+    const after = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [
+      { type: 'reasoning', text: 'Sketching the patch.' },
+      { type: 'text', text: '# Fix\n\n- fast\n- safe\n\n```ts\nconst n = 1 // count\nlet m = 2\n```' },
+    ] } } })
+    ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    await terminal.waitForFrame(after)
     await controller.dispose()
   })
 
