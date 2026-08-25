@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPalette } from '../src/theme/palette.ts'
 import { Transcript } from '../src/ui/transcript/transcript.ts'
 import { UserMessageCell } from '../src/ui/transcript/cells.ts'
+import { StreamingAssistantCell } from '../src/ui/transcript/streaming.ts'
 
 const p = createPalette(false)
 const render = (t: Transcript) => t.container.render(80).join('\n')
@@ -127,5 +128,83 @@ describe('Transcript', () => {
     const t = new Transcript(createPalette(false))
     t.apply({ kind: 'notice', notice: { text: 'Unknown command: /nope', tone: 'warning' } })
     expect(t.container.render(60).join('\n')).toContain('Unknown command: /nope')
+  })
+})
+
+describe('Transcript reasoning visibility (Ctrl+R, spec §6)', () => {
+  // mountedLineCount is maintained incrementally; the invariant it must always
+  // satisfy is "equal to the sum of what every mounted child registered"
+  // (Spacer and the trim marker are one content line each).
+  const registered = (t: Transcript): number =>
+    t.container.children.reduce((n, c) => n + (c instanceof StreamingAssistantCell ? c.lineCount() : 1), 0)
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+
+  const withReasoning = (t: Transcript): void => {
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'reasoning', text: 'why a\nwhy b' }, { type: 'text', text: 'settled answer' }] })
+    t.apply({ kind: 'stream-delta', turn: 2, step: 1, index: 0, block: 'reasoning', text: 'still thinking' })
+    t.apply({ kind: 'stream-delta', turn: 2, step: 1, index: 1, block: 'text', text: 'live answer' })
+  }
+
+  it('hides reasoning in settled AND live cells, then restores the identical rows', () => {
+    const t = new Transcript(p)
+    withReasoning(t)
+    const shown = render(t)
+    const shownRows = t.mountedLines(80)
+
+    t.setShowReasoning(false)
+    const hidden = render(t)
+    expect(hidden).not.toContain('why a')
+    expect(hidden).not.toContain('still thinking')
+    expect(hidden).toContain('settled answer')          // both cells keep their text
+    expect(hidden).toContain('live answer')
+    expect(t.mountedLines(80)).toBe(shownRows - 3)      // 2 settled reasoning rows + 1 live one
+
+    t.setShowReasoning(true)
+    expect(render(t)).toBe(shown)
+    expect(t.mountedLines(80)).toBe(shownRows)
+  })
+
+  it('keeps the mount-cap accounting honest across toggles', () => {
+    const t = new Transcript(p)
+    withReasoning(t)
+    const before = accounted(t)
+    expect(before).toBe(registered(t))
+
+    t.setShowReasoning(false)
+    expect(accounted(t)).toBe(before - 3)
+    expect(accounted(t)).toBe(registered(t))
+
+    t.setShowReasoning(true)
+    expect(accounted(t)).toBe(before)
+    expect(accounted(t)).toBe(registered(t))
+  })
+
+  it('cells opened while reasoning is hidden inherit the state', () => {
+    const t = new Transcript(p)
+    t.setShowReasoning(false)
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'reasoning', text: 'live thought' })
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'reasoning', text: 'first thought' }, { type: 'text', text: 'first' }] })
+    // a second settle of the same key opens a FRESH cell — it inherits too
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'reasoning', text: 'second thought' }, { type: 'text', text: 'second' }] })
+    const out = render(t)
+    expect(out).not.toContain('thought')
+    expect(out).toContain('first')
+    expect(out).toContain('second')
+  })
+
+  it('restoring reasoning re-trims when the cap is exceeded again', () => {
+    const t = new Transcript(p, { mountCapLines: 12 })
+    t.setShowReasoning(false)
+    for (let i = 0; i < 3; i++) {
+      t.apply({ kind: 'stream-settle', turn: i + 1, step: 1, content: [{ type: 'reasoning', text: `r${i}a\nr${i}b\nr${i}c` }, { type: 'text', text: `answer ${i}` }] })
+    }
+    expect(accounted(t)).toBe(8)                        // 3 × (header + text line) + 2 spacers: under the cap
+    expect(render(t)).toContain('answer 0')
+
+    t.setShowReasoning(true)                            // 17 content lines: back over the cap
+    expect(render(t)).toContain('earlier history not shown')
+    expect(render(t)).not.toContain('answer 0')
+    expect(accounted(t)).toBeLessThanOrEqual(12)
+    expect(accounted(t)).toBe(registered(t))
   })
 })

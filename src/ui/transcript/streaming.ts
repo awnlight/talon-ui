@@ -36,20 +36,22 @@ export class StreamingAssistantCell implements Component {
   // Transcript's mount-cap trim reads this so apply() never has to render
   // the container just to count lines.
   private lines = 1
+  // The reasoning share of `lines`, tracked the same incremental way, so
+  // Ctrl+R's toggle costs O(1): while reasoning is hidden lineCount() simply
+  // reports the difference.
+  private reasoningLines = 0
 
-  constructor(private readonly palette: Palette) {}
+  constructor(private readonly palette: Palette, private showReasoning = true) {}
 
   update(delta: { index: number; block: 'text' | 'reasoning'; text: string }): void {
     if (this.settled) return
     const existing = this.blocks.get(delta.index)
     const newlines = (delta.text.match(/\n/g) ?? []).length
-    if (existing) {
-      existing.text += delta.text
-      this.lines += newlines
-    } else {
-      this.blocks.set(delta.index, { block: delta.block, text: delta.text })
-      this.lines += newlines + 1
-    }
+    const added = existing ? newlines : newlines + 1
+    if (existing) existing.text += delta.text
+    else this.blocks.set(delta.index, { block: delta.block, text: delta.text })
+    this.lines += added
+    if (delta.block === 'reasoning') this.reasoningLines += added
     // Live D11 path: every text delta rebuilds the joined source on the ONE
     // live Markdown (no throttle — the cell is uncached while live, so the
     // next render re-renders it). Reasoning deltas never touch markdown.
@@ -65,7 +67,9 @@ export class StreamingAssistantCell implements Component {
     // mount-cap accounting counts logical SOURCE lines, not rendered rows —
     // markdown adds structural rows like fence borders by a modest bounded
     // factor at render time, exactly as wrapping does).
-    this.lines = 1 + this.presentedParts().reduce((n, p) => n + p.text.split('\n').length, 0)
+    const parts = this.presentedParts()
+    this.lines = 1 + parts.reduce((n, p) => n + p.text.split('\n').length, 0)
+    this.reasoningLines = parts.reduce((n, p) => (p.block === 'reasoning' ? n + p.text.split('\n').length : n), 0)
     // Wholesale replacement: a fresh Markdown from the authoritative blocks
     // (never trust the accumulation buffer, §5.3).
     this.md = new Markdown(this.textSource(), 0, 0, markdownTheme(this.palette))
@@ -73,8 +77,18 @@ export class StreamingAssistantCell implements Component {
   isSettled(): boolean { return this.settled !== undefined }
 
   /** Current mounted line count, kept in sync with render()'s output shape
-   * without rendering (I3's O(1) mount-cap accounting). */
-  lineCount(): number { return this.lines }
+   * without rendering (I3's O(1) mount-cap accounting) — hidden reasoning is
+   * not rendered, so it does not count. */
+  lineCount(): number { return this.showReasoning ? this.lines : this.lines - this.reasoningLines }
+
+  /** Ctrl+R's transcript-wide toggle, applied as a MUTATOR rather than a
+   * render argument: the flag flips, the width cache goes, and lineCount()
+   * re-derives so the transcript can re-register the delta. Ephemeral UI
+   * state — never persisted, never logged (spec §3.10). */
+  setShowReasoning(show: boolean): void {
+    this.showReasoning = show
+    this.cache = undefined
+  }
 
   invalidate(): void { this.cache = undefined }
 
@@ -102,6 +116,7 @@ export class StreamingAssistantCell implements Component {
     let mdRows: string[] | undefined
     for (const part of this.presentedParts()) {
       if (part.block === 'reasoning') {
+        if (!this.showReasoning) continue // Ctrl+R hides reasoning transcript-wide
         // Reasoning stays plain dim+italic in both paths (ruling 16).
         const rows = wrapPlain(displayText(part.text), width)
         lines.push(...rows.map((l) => this.palette.dim(this.palette.italic(l))))

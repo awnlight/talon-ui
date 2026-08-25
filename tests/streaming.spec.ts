@@ -261,3 +261,57 @@ describe('streaming Markdown live path (D11, Task 3)', () => {
     expect(only.render(80)[1]).toBe(colored.dim(colored.italic('thinking')))
   })
 })
+
+describe('reasoning visibility (Ctrl+R, Task 4)', () => {
+  const colored = createPalette(true)
+
+  it('settled: hiding drops the reasoning rows and their share of the line count; restoring is exact', () => {
+    const cell = new StreamingAssistantCell(colored)
+    cell.settle([{ type: 'reasoning', text: 'why a\nwhy b' }, { type: 'text', text: 'answer' }])
+    const shown = cell.render(80)
+    expect(cell.lineCount()).toBe(4)                    // header + 2 reasoning + 1 text source lines
+
+    cell.setShowReasoning(false)
+    const hidden = cell.render(80)
+    expect(hidden.join('\n')).not.toContain('why a')
+    expect(hidden.join('\n')).toContain('answer')
+    expect(hidden.length).toBe(shown.length - 2)
+    expect(cell.lineCount()).toBe(2)                    // header + the one text line
+    expect(cell.render(80)).toBe(hidden)                // the width cache is live again WITHIN this state
+
+    cell.setShowReasoning(true)
+    expect(cell.render(80)).toEqual(shown)              // identical rows (a fresh array: the mutation dropped the cache)
+    expect(cell.lineCount()).toBe(4)
+  })
+
+  it('live: hiding drops only the reasoning rows, leaving the markdown text untouched', () => {
+    const cell = new StreamingAssistantCell(colored)
+    cell.update({ index: 0, block: 'reasoning', text: 'thinking' })
+    cell.update({ index: 1, block: 'text', text: '# Title' })
+    const shown = cell.render(80)
+    expect(cell.lineCount()).toBe(3)
+
+    cell.setShowReasoning(false)
+    expect(cell.render(80)).toEqual(shown.filter((r) => !r.includes('thinking')))
+    expect(cell.lineCount()).toBe(2)
+
+    cell.setShowReasoning(true)
+    expect(cell.render(80)).toEqual(shown)
+  })
+
+  it('a cell with no reasoning is a no-op under the toggle', () => {
+    const cell = new StreamingAssistantCell(colored)
+    cell.settle([{ type: 'text', text: 'answer' }])
+    const before = cell.render(80)
+    cell.setShowReasoning(false)
+    expect(cell.render(80)).toEqual(before)
+    expect(cell.lineCount()).toBe(2)                    // header + one text line, unchanged
+  })
+
+  it('a cell constructed with reasoning already hidden never shows it', () => {
+    const cell = new StreamingAssistantCell(colored, false)
+    cell.update({ index: 0, block: 'reasoning', text: 'thinking' })
+    expect(cell.render(80).join('\n')).not.toContain('thinking')
+    expect(cell.lineCount()).toBe(1)
+  })
+})

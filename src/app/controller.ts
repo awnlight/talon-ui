@@ -472,6 +472,15 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // modifyOtherKeys escape encoding does. No prefix-match guard needed.
     if (matchesKey(data, 'escape') && running) { bound.cancel({ kind: 'user' }); return { consume: true } }
     if (matchesKey(data, 'ctrl+l')) { tui.requestRender(true); return { consume: true } }
+    if (matchesKey(data, 'ctrl+r')) {
+      // Transcript-wide reasoning visibility (spec §6). The transcript owns
+      // the flag — read at call time so a rebind's fresh transcript answers,
+      // not a stale mirror — and it is ephemeral: never persisted, never
+      // logged (spec §3.10).
+      transcript.setShowReasoning(!transcript.reasoningShown())
+      tui.requestRender()
+      return { consume: true }
+    }
     if (matchesKey(data, 'ctrl+d') && composer.editor.getText() === '') {
       if (!running) requestExit()
       // Running: flash the interrupt-first hint (spec §6, carryover 3); the

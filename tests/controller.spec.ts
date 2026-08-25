@@ -284,6 +284,39 @@ describe('controller', () => {
     expect(terminal.frames).toBeGreaterThan(before)
     await controller.dispose()
   })
+  it('Ctrl+R toggles reasoning visibility transcript-wide (spec §6)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'weighing it' } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 1, text: 'the answer' } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('weighing it')
+
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('weighing it')
+    expect(terminal.snapshot()).toContain('the answer')
+
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('weighing it')
+    await controller.dispose()
+  })
+  it('Ctrl+R is suspended while a panel is active (spec D5)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'weighing it' } } })
+    await terminal.waitForFrame(before)
+    void controller.panels.enqueue({ create: () => new Text('panel', 0, 0), forced: () => ({ outcome: undefined }) })
+    terminal.input('\x12')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(terminal.snapshot()).toContain('weighing it')
+    await controller.dispose()
+  })
   it('global keys yield while a panel is active (spec D5)', async () => {
     const { ctx, agent, terminal, exit, controller } = setup()
     await terminal.waitForFrame(0)

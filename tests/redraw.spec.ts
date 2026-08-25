@@ -112,12 +112,23 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
     await terminal.waitForFrame(before)
     before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'checks now.' } } })
-    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Running the checks now.' }] } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'reasoning', text: 'Checking the plan.' }, { type: 'text', text: 'Running the checks now.' }] } } })
     ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
     agent.status = 'idle'
     ctx.emit('agent/status', { agent, status: 'idle' })
     await terminal.waitForFrame(before)
     expect(terminal.snapshot()).toContain('Running the checks now.')
+
+    // Phase 1b: Ctrl+R hides reasoning — a transcript SHRINK, the classic
+    // full-redraw trigger — and restores it.
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('Checking the plan.')
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('Checking the plan.')
 
     // Phase 2: approval request → panel → answer '1' → audit pair.
     before = terminal.frames

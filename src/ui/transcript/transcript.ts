@@ -28,6 +28,9 @@ export class Transcript {
   // renders the container just to check the cap. mountedLines(width) still does a
   // real render, but only when an external caller asks for a specific width.
   private mountedLineCount = 0
+  // Ctrl+R's transcript-wide reasoning visibility (spec §6). Ephemeral UI
+  // state: never persisted, never logged, never part of an AppEvent (§3.10).
+  private showReasoning = true
   // approval-asked carries no audit text of its own — it only tells the
   // matching approval-decided which tool it was asked about (spec D9's
   // replay-safe id correlation; the pair need not be contiguous).
@@ -38,6 +41,24 @@ export class Transcript {
   }
 
   mountedLines(width: number): number { return this.container.render(width).length }
+
+  /** What Ctrl+R flips (read by the controller's key handler). */
+  reasoningShown(): boolean { return this.showReasoning }
+
+  /** Propagates the toggle to every mounted streaming cell as a mutator, and
+   * re-registers each cell's line-count delta — hidden reasoning rows are not
+   * rendered, so mountedLineCount stays equal to the sum of the registered
+   * counts and the mount cap keeps bounding (D10). */
+  setShowReasoning(show: boolean): void {
+    this.showReasoning = show
+    for (const child of this.container.children) {
+      if (!(child instanceof StreamingAssistantCell)) continue
+      const before = child.lineCount()
+      child.setShowReasoning(show)
+      this.mountedLineCount += child.lineCount() - before
+    }
+    this.trim() // restoring reasoning can put the transcript back over the cap
+  }
 
   apply(event: AppEvent): void {
     switch (event.kind) {
@@ -62,7 +83,7 @@ export class Transcript {
         if (cell.isSettled()) {
           // A settled cell never re-absorbs a later message (replay-parity fix): new cell.
           this.spaceBeforeNewCell()
-          const fresh = new StreamingAssistantCell(this.palette)
+          const fresh = new StreamingAssistantCell(this.palette, this.showReasoning)
           fresh.settle(event.content)
           this.addChild(fresh, fresh.lineCount())
           this.live = { key, cell: fresh }
@@ -130,7 +151,7 @@ export class Transcript {
   private cell(key: string): StreamingAssistantCell {
     if (this.live?.key !== key) {
       this.spaceBeforeNewCell()
-      const cell = new StreamingAssistantCell(this.palette)
+      const cell = new StreamingAssistantCell(this.palette, this.showReasoning)
       this.addChild(cell, cell.lineCount())
       this.live = { key, cell }
     }
