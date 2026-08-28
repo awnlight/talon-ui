@@ -4,6 +4,7 @@ import { createPalette } from '../src/theme/palette.ts'
 import { Transcript } from '../src/ui/transcript/transcript.ts'
 import { UserMessageCell } from '../src/ui/transcript/cells.ts'
 import { StreamingAssistantCell } from '../src/ui/transcript/streaming.ts'
+import { BannerCell } from '../src/ui/banner.ts'
 import { ToolCardCell } from '../src/ui/transcript/tool-cards.ts'
 
 const p = createPalette(false)
@@ -654,6 +655,18 @@ describe('proximity: consecutive same-kind audit rows are ONE group (spec §4.1 
     expect(t.container.render(80).filter((row) => row !== '')).toHaveLength(0)
     t.setCardVisibility('collapsed')
     expect(t.container.render(80)).toHaveLength(3)
+  })
+
+  it('does not charge a spacer under the banner, which pays for its own padding', () => {
+    const t = new Transcript(p)
+    t.mountBanner(new BannerCell({ version: '0.1.0', model: 'm', cwd: '~/x' }, p))
+    const alone = t.container.render(80)
+    expect(alone[0]).toBe('')                          // air above
+    expect(alone.at(-1)).toBe('')                      // and below, with nothing following
+
+    t.apply({ kind: 'user-message', text: 'hi' })
+    const rows = t.container.render(80)
+    expect(rows.slice(alone.length - 1, rows.indexOf('You'))).toEqual([''])   // one blank, not two
   })
 
   it('handles a transcript with NOTHING visible left to group against', () => {

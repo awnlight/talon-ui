@@ -2,18 +2,17 @@ terminal 100x30 buffer=normal length=509 base=479 viewport=479
 lifecycle started=1 stopped=0 progress=inactive
 title "\x1b]0;RETITLED\x07\x1b[2J\x1b[H\x1b]8;;https://evil.example\x1b\CLICKME\x1b]8;;\x1b\\u202egnih…"
 cursor hidden @27,2
-0| "  ▄████▄   ▗█"
+0| <blank>
+1| "  ▄████▄   ▗█"
   style 0-12 fg-6
-1| " ██ █████▄▗██    talon"
+2| " ██ █████▄▗██    talon"
   style 0-12 fg-6
   style 17-21 fg-6 bold
-2| " ████████████▘   /workspace/\x1b]0;RETITLED\x07\x1b[2J\x1b[H\x1b]8;;https://evil.example\x1b\CLICKM…"
+3| " ████████████▘   /workspace/\x1b]0;RETITLED\x07\x1b[2J\x1b[H\x1b]8;;https://evil.example\x1b\CLICKM…"
   style 0-13 fg-6
   style 17-98 dim
-3| " ▝█████████▘"
+4| " ▝█████████▘"
   style 0-11 fg-6
-4| "  █ █ █"
-  style 0-6 fg-6
 5| <blank>
 6| "You"
   style 0-2 bold underline

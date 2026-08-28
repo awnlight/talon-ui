@@ -36,6 +36,14 @@ function groupsWith(previous: Component | undefined, cell: Component): boolean {
   return previous !== undefined && groupable(cell) && previous.constructor === cell.constructor
 }
 
+/** Whether the blank row between `previous` and `cell` is already paid for.
+ * Two ways it can be: the pair is one group (above), or `previous` is the
+ * BANNER, which renders its own padding row — charging the spacer as well
+ * would put two blank rows under the banner and one above it. */
+function spacerPaid(previous: Component | undefined, cell: Component): boolean {
+  return previous instanceof BannerCell || groupsWith(previous, cell)
+}
+
 // O(1) mount-cap accounting (I3 fix): the cap is measured in CONTENT lines
 // (logical lines before width-wrapping). Cells report their own count via
 // contentLineCount()/lineCount(); Spacer(1) is always one line. Wrapping
@@ -114,7 +122,7 @@ export class Transcript {
       // A blank row is earned only BETWEEN two visible cells that are not the
       // same group: an invisible cell takes its spacer with it (or hidden mode
       // would be a blank screen), and a group closes ranks (proximity).
-      const keep = lines > 0 && shownSomething && !groupsWith(previousShown, child)
+      const keep = lines > 0 && shownSomething && !spacerPaid(previousShown, child)
       spacer?.setHidden(!keep)
       this.mountedLineCount += (keep ? 1 : 0) + lines
       shownSomething ||= lines > 0
@@ -325,7 +333,7 @@ export class Transcript {
   private appendCell(cell: Component, lines: number): void {
     if (this.container.children.length > 0) {
       const spacer = new SpacerCell()
-      spacer.setHidden(lines === 0 || this.mountedLineCount === 0 || groupsWith(this.lastVisible(), cell))
+      spacer.setHidden(lines === 0 || this.mountedLineCount === 0 || spacerPaid(this.lastVisible(), cell))
       this.addChild(spacer, spacer.contentLineCount())
     }
     if (lines > 0 && !(cell instanceof StreamingAssistantCell)) this.headerTurn = undefined

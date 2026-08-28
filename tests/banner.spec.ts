@@ -14,43 +14,46 @@ const render = (over: Partial<BannerView> = {}, width = 90, palette = createPale
   new BannerCell(view(over), palette).render(width)
 
 describe('BannerCell (spec D6)', () => {
-  it('sets the mark beside three facts, every text row on ONE column', () => {
+  it('sets the mark beside three facts, with a blank row above and below', () => {
     const rows = render()
-    expect(rows).toHaveLength(MARK.length)
-    const markWidth = Math.max(...MARK.map((row) => visibleWidth(row)))
-    // Rows 1-3 carry text; the mark's own rows differ in width, so the pad is
-    // what proves the text block is a block rather than a ragged edge.
-    for (const i of [1, 2, 3]) expect(rows[i]!.indexOf(rows[i]!.trimStart().slice(-1))).toBeGreaterThan(markWidth)
-    expect(rows[1]).toContain('talon')
-    expect(rows[1]).toContain('v0.1.0')
-    expect(rows[2]).toContain('deepseek-v4-pro')
-    expect(rows[3]).toContain('~/proj/app')
-    expect(rows[0]!.trimEnd()).toBe(MARK[0])          // no text on the first mark row
-    expect(rows[4]!.trimEnd()).toBe(MARK[4])          // nor the last
+    expect(rows).toHaveLength(MARK.length + 2)
+    expect(rows[0]).toBe('')                          // the banner is not spill from the shell prompt
+    expect(rows.at(-1)).toBe('')
+    expect(rows[1]!.trimEnd()).toBe(MARK[0])          // no text on the first mark row
+    expect(rows[2]).toContain('talon')
+    expect(rows[2]).toContain('v0.1.0')
+    expect(rows[3]).toContain('deepseek-v4-pro')
+    expect(rows[4]).toContain('~/proj/app')
+  })
+
+  it('starts every text row on ONE column, whatever each mark row measures', () => {
+    const marked = render().slice(2, 2 + 3)
+    const columns = marked.map((row, i) => row.indexOf(row.slice(visibleWidth(MARK[i + 1]!)).trimStart()))
+    expect(new Set(columns).size).toBe(1)
   })
 
   it('is the ONE place the full working directory is spelled out', () => {
-    expect(render({ cwd: '~/Dev/proj/for-private/agents/deepseek-harness' })[3])
+    expect(render({ cwd: '~/Dev/proj/for-private/agents/deepseek-harness' })[4])
       .toContain('~/Dev/proj/for-private/agents/deepseek-harness')
   })
 
   it('drops an absent value together with its line, exactly as the footer does', () => {
     // No model declared yet: the line vanishes and the cwd moves up into it,
     // rather than leaving a blank row where a fact was going to be.
-    expect(render({ model: undefined })[2]).toContain('~/proj/app')
-    expect(render({ model: undefined })[3]!.trimEnd()).toBe(MARK[3])
+    expect(render({ model: undefined })[3]).toContain('~/proj/app')
+    expect(render({ model: undefined })[4]!.trimEnd()).toBe(MARK[3])
   })
 
   it('drops the version rather than inventing one when package.json is unreadable', () => {
     const rows = render({ version: undefined })
-    expect(rows[1]).toContain('talon')
-    expect(rows[1]).not.toContain('v')                 // no `v0.0.0` asserting a version that is not true
+    expect(rows[2]).toContain('talon')
+    expect(rows[2]).not.toContain('v')                 // no `v0.0.0` asserting a version that is not true
   })
 
   it('gives the mark away when the terminal cannot hold both — the facts win', () => {
     const narrow = render({}, 30)
     expect(narrow.some((row) => row.includes('█'))).toBe(false)
-    expect(narrow[0]).toContain('talon')
+    expect(narrow[1]).toContain('talon')
     for (const row of narrow) expect(visibleWidth(row)).toBeLessThanOrEqual(30)
   })
 
@@ -71,15 +74,16 @@ describe('BannerCell (spec D6)', () => {
         { text: 'resumed from a previous session', tone: 'info' },
       ],
     }), p).render(90)
-    expect(rows).toHaveLength(MARK.length + 3)
+    expect(rows).toHaveLength(MARK.length + 3 + 2)
     expect(rows[5]).toBe(p.warning('⚠ skills failed to load'))
     expect(rows[6]).toBe(p.error('⚠ no attachment store'))
     expect(rows[7]).toBe(p.dim('· resumed from a previous session'))
+    expect(rows.at(-1)).toBe('')                       // the padding stays last
   })
 
   it('counts its own content lines for the mount cap, notes included', () => {
-    expect(new BannerCell(view(), createPalette(false)).contentLineCount()).toBe(MARK.length)
-    expect(new BannerCell(view({ notes: [{ text: 'x', tone: 'info' }] }), createPalette(false)).contentLineCount()).toBe(MARK.length + 1)
+    expect(new BannerCell(view(), createPalette(false)).contentLineCount()).toBe(MARK.length + 2)
+    expect(new BannerCell(view({ notes: [{ text: 'x', tone: 'info' }] }), createPalette(false)).contentLineCount()).toBe(MARK.length + 3)
   })
 
   it('neutralizes terminal controls in every field it prints (D7.8)', () => {

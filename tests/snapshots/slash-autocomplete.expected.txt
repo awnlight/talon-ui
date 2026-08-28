@@ -1,32 +1,32 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @6,3
-0| "  ▄████▄   ▗█"
+cursor hidden @7,3
+0| <blank>
+1| "  ▄████▄   ▗█"
   style 0-12 fg-6
-1| " ██ █████▄▗██    talon"
+2| " ██ █████▄▗██    talon"
   style 0-12 fg-6
   style 17-21 fg-6 bold
-2| " ████████████▘   /workspace/talon-ui"
+3| " ████████████▘   /workspace/talon-ui"
   style 0-13 fg-6
   style 17-35 dim
-3| " ▝█████████▘"
+4| " ▝█████████▘"
   style 0-11 fg-6
-4| "  █ █ █"
-  style 0-6 fg-6
-5| "────────────────────────────────────────────────────────────────────────"
+5| <blank>
+6| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-6| "❯ /"
+7| "❯ /"
   style 0-0 dim
   style 3-3 inverse
-7| "  → exit        Exit talon"
+8| "  → exit        Exit talon"
   style 2-25 inverse
-8| "    help        List available commands"
+9| "    help        List available commands"
   style 8-38 dim
-9| "    quit        Exit talon (alias of /exit)"
+10| "    quit        Exit talon (alias of /exit)"
   style 8-42 dim
-10| "    status      Show session status"
+11| "    status      Show session status"
   style 10-34 dim
-11| "enter send · shift+enter newline · ctrl+c exit"
+12| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-12-17| <blank>
+13-17| <blank>

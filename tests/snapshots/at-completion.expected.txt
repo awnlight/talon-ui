@@ -1,30 +1,30 @@
 terminal 76x16 buffer=normal length=16 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @6,14
-0| "  ▄████▄   ▗█"
+cursor hidden @7,14
+0| <blank>
+1| "  ▄████▄   ▗█"
   style 0-12 fg-6
-1| " ██ █████▄▗██    talon"
+2| " ██ █████▄▗██    talon"
   style 0-12 fg-6
   style 17-21 fg-6 bold
-2| " ████████████▘   /workspace/talon-ui"
+3| " ████████████▘   /workspace/talon-ui"
   style 0-13 fg-6
   style 17-35 dim
-3| " ▝█████████▘"
+4| " ▝█████████▘"
   style 0-11 fg-6
-4| "  █ █ █"
-  style 0-6 fg-6
-5| "────────────────────────────────────────────────────────────────────────────"
+5| <blank>
+6| "────────────────────────────────────────────────────────────────────────────"
   style 0-75 dim
-6| "❯ look at @src"
+7| "❯ look at @src"
   style 0-0 dim
   style 14-14 inverse
-7| "  → src/app/controller.ts           file"
+8| "  → src/app/controller.ts           file"
   style 2-39 inverse
-8| "    src/ui                          directory"
+9| "    src/ui                          directory"
   style 10-44 dim
-9| "    docs/my plan.md                 file"
+10| "    docs/my plan.md                 file"
   style 19-39 dim
-10| "enter send · shift+enter newline · ctrl+c exit"
+11| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-11-15| <blank>
+12-15| <blank>

@@ -13,7 +13,6 @@
  *    ██ █████▄▗██    talon  v0.1.0
  *    ████████████▘   deepseek-v4-pro
  *    ▝█████████▘     ~/proj/app
- *     █ █ █
  *
  * Three tones, three ranks: the brand ramp for the mark and the wordmark,
  * the terminal's own foreground for the one fact that changes what the
@@ -23,25 +22,33 @@ import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { brandGradient, brandGrid, displayText, type Palette } from '../theme/palette.js'
 import { CachedCell } from './transcript/cells.js'
 
-/** dsh's whale wearing talon's claws. Drawn on a 2×2-pixel-per-cell quadrant
- * grid (`docs/` has the source grid) so every feature — the eye gap, the three
- * claws — lands on an EVEN pixel boundary and survives the block-glyph
- * downsample; an odd-aligned feature smears across two cells and reads as
- * noise, which is exactly how the first drafts failed. */
+/** dsh's whale. Drawn on a 2×2-pixel-per-cell quadrant grid so every feature —
+ * the eye gap above all — lands on an EVEN pixel boundary and survives the
+ * block-glyph downsample; an odd-aligned feature smears across two cells and
+ * reads as noise, which is exactly how the first drafts failed.
+ *
+ * The last row is the whale's rounded BELLY, not part of the claws that used
+ * to hang under it. Cutting it too leaves a flat-bottomed slab that stops
+ * reading as a whale — which is what happened the first time these rows came
+ * off. */
 export const MARK: readonly string[] = [
   '  ▄████▄   ▗█',
   ' ██ █████▄▗██',
   ' ████████████▘',
   ' ▝█████████▘',
-  '  █ █ █',
 ]
 
 /** Columns between the mark and the text block. */
 const GAP = 3
+/** One blank row above and below the block. The banner opens the session, so
+ * it lands directly under the shell's own prompt line with nothing between —
+ * without this it reads as spill from the command that started talon. */
+const PAD = ''
 /** Below this much room for text the mark is dropped entirely — a wrapped or
  * truncated mark is worse than no mark. */
 const MIN_TEXT_WIDTH = 24
-/** Which mark rows the three text lines sit beside (centred against 5 rows). */
+/** Which mark row the text block starts beside — unchanged from the five-row
+ * mark, so the title still sits level with the whale's eye. */
 const TEXT_TOP = 1
 
 export interface BannerView {
@@ -64,7 +71,7 @@ export interface BannerView {
 export class BannerCell extends CachedCell {
   constructor(private readonly view: BannerView, private readonly palette: Palette) { super() }
 
-  contentLineCount(): number { return MARK.length + (this.view.notes?.length ?? 0) }
+  contentLineCount(): number { return 2 + MARK.length + (this.view.notes?.length ?? 0) }
 
   private textLines(): string[] {
     const p = this.palette
@@ -83,7 +90,7 @@ export class BannerCell extends CachedCell {
     const p = this.palette
     const text = this.textLines()
     const markWidth = Math.max(...MARK.map((row) => visibleWidth(row)))
-    const rows: string[] = []
+    const rows: string[] = [PAD]
     if (safe - markWidth - GAP >= MIN_TEXT_WIDTH) {
       const mark = brandGrid(MARK, p)
       const room = safe - markWidth - GAP
@@ -101,6 +108,7 @@ export class BannerCell extends CachedCell {
       const glyph = note.tone === 'info' ? '·' : '⚠'
       rows.push(truncateToWidth(tone(`${glyph} ${displayText(note.text)}`), safe, '…'))
     }
+    rows.push(PAD)
     return rows
   }
 }
