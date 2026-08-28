@@ -110,6 +110,7 @@ function setup(overrides: {
   createRootAgent?: ControllerDeps['createRootAgent']
   services?: Partial<ControllerDeps['services']>
   palette?: ControllerDeps['palette']
+  modelSelection?: ControllerDeps['modelSelection']
 } = {}) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
@@ -125,6 +126,7 @@ function setup(overrides: {
     agents: overrides.agents ?? session.agents,
     createRootAgent: overrides.createRootAgent ?? session.createRootAgent,
     services: { ...session.services, ...overrides.services },
+    ...overrides.modelSelection === undefined ? {} : { modelSelection: overrides.modelSelection },
   })
   return { ctx, agent, terminal, exit, controller, commands }
 }
@@ -518,6 +520,99 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('/model picks a route whose effect lands on the NEXT step (spec §3.7)', async () => {
+    const selection: { current: { provider: string; model: string; reasoningEffort?: string } | undefined } = { current: { provider: 'deepseek', model: 'deepseek-chat' } }
+    const svc = dispatchingCommandService()
+    // Wide enough that the confirmation notice does not wrap mid-phrase.
+    const { terminal, controller } = setup({
+      cols: 120,
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: {
+        listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }],
+        listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }, { id: 'deepseek-reasoner', name: 'Reasoner' }],
+        resolveModelInfo: async (_p: string, model: string) => model === 'deepseek-reasoner'
+          ? { context: { contextWindow: 128_000 }, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } }
+          : { context: { contextWindow: 64_000 } },
+      } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Reasoner'))
+
+    // One settled frame per key — a panel must never race a frame in flight.
+    for (const key of ['\x1b[B', '\x1b[Z', '\r']) {
+      const before = terminal.frames
+      terminal.input(key)                                     // down · shift+tab · enter
+      await terminal.waitForFrame(before)
+    }
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'low' })
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('takes effect on the next step'))
+    await controller.dispose()
+  })
+
+  it('/model says so when the composition cannot switch, or the catalog will not answer', async () => {
+    const svc = dispatchingCommandService()
+    const noSelection = setup({ commands: svc })
+    await noSelection.terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(noSelection.terminal.snapshot()).toContain('not available in this composition'))
+    await noSelection.controller.dispose()
+
+    const broken = dispatchingCommandService()
+    const failing = setup({
+      commands: broken,
+      modelSelection: { current: undefined },
+      services: { llm: { listProviders: () => { throw new Error('catalog is down') }, listModels: async () => [], resolveModelInfo: async () => ({}) } },
+    })
+    await failing.terminal.waitForFrame(0)
+    broken.handlers.get('model')!()
+    await vi.waitFor(() => expect(failing.terminal.snapshot()).toContain('Could not read the model catalog'))
+    await failing.controller.dispose()
+  })
+
+  it('/model selects an effort-less route with NO effort key, and a cancel changes nothing', async () => {
+    const selection: { current: { provider: string; model: string; reasoningEffort?: string } | undefined } = { current: undefined }
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      cols: 120,
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: { listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }], listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }], resolveModelInfo: async () => ({}) } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Chat'))
+    let before = terminal.frames
+    terminal.input('\r')
+    await terminal.waitForFrame(before)
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })   // no reasoningEffort key at all
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('takes effect on the next step'))
+
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('type to filter'))
+    before = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(before)
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })
+    await controller.dispose()
+  })
+
+  it('a /model panel still open at dispose is force-closed, and picks nothing', async () => {
+    const selection = { current: undefined }
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: { listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }], listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }], resolveModelInfo: async () => ({}) } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Chat'))
+    await controller.dispose()                                   // disposeAll() takes the panel's forced outcome
+    expect(selection.current).toBeUndefined()
+  })
+
   it('Ctrl+O cycles card visibility transcript-wide: collapsed → expanded → hidden (spec §4.2)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)
@@ -698,7 +793,7 @@ describe('controller', () => {
     const { ctx, agent, terminal, controller } = setup({ commands: { ...svc, list: () => [{ name: 'help', description: 'List available commands' }] } })
     const text = (name: string): string | undefined => (svc.handlers.get(name)!() as { text?: string }).text
     await terminal.waitForFrame(0)
-    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'palette', 'quit', 'resume', 'status'])
+    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'model', 'palette', 'quit', 'resume', 'status'])
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent idle`)
     expect(text('help')).toBe('/help — List available commands')
     expect(text('palette')).toBe(paletteTable(createPalette(true)))   // generated from the spec, never hand-typed

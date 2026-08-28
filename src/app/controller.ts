@@ -12,6 +12,7 @@ import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
 import { registerSessionCommands, registerTalonCommands } from '../backend/commands.js'
 import { Metrics } from '../backend/metrics.js'
+import { readModelChoices, type LlmCatalog, type ModelTarget } from '../backend/models.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
@@ -21,6 +22,7 @@ import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
+import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
@@ -89,8 +91,16 @@ export interface ControllerDeps {
       cachedSnapshot(header: SessionRecordLike['header']): { values: { title?: string | null } } | undefined
       coldSnapshot(id: string, signal?: AbortSignal): Promise<{ values: { title?: string | null } }>
     }
-    llm: { listProviders(): { id: string }[] }
+    /** The catalog `/model` reads (spec §3.7). `listProviders` alone is what
+     * the resume preflight needs; the two async members are optional so a
+     * composition without a model catalog still boots — `/model` then says so
+     * instead of throwing. */
+    llm: LlmCatalog
   }
+  /** Installed once per bind so a pick takes effect on the NEXT step
+   * (`installModelSelection`'s own contract). Absent in tests that do not
+   * exercise `/model`. */
+  modelSelection?: { current: ModelTarget | undefined }
   exit(code: number): void
 }
 
@@ -124,6 +134,8 @@ function gitBranch(cwd: string): string | undefined {
   }
 }
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
+const MODEL_UNAVAILABLE = 'Model switching is not available in this composition.'
+const MODEL_FAILED = 'Could not read the model catalog:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
 const WORKSPACE_UNSET = 'cwd unset'
@@ -492,6 +504,37 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     }
   }
 
+  /** `/model` (spec §3.7): the panel mounts in its own loading state and fills
+   * from the live catalog, exactly as the resume selector does. A pick writes
+   * the shared selection ref — `installModelSelection` makes the next step
+   * read it, so nothing here has to touch a request in flight. */
+  const openModel = (): void => {
+    const selection = deps.modelSelection
+    if (selection === undefined) { appendLocalNotice({ text: MODEL_UNAVAILABLE, tone: 'error' }); return }
+    let settle!: (picked: ModelPick | undefined) => void
+    const panel = new ModelPanel((picked) => settle(picked), palette)
+    const picked = panels.enqueue<ModelPick | undefined>({
+      create: (finish) => { settle = finish; return panel },
+      forced: () => ({ outcome: undefined }),
+    })
+    void (async () => {
+      try {
+        panel.setChoices(await readModelChoices(deps.services.llm, selection.current))
+        tui.requestRender()
+      } catch (cause) {
+        settle(undefined)
+        appendLocalNotice({ text: `${MODEL_FAILED} ${failureText(cause)}`, tone: 'error' })
+      }
+    })()
+    void picked.then((choice) => {
+      if (choice === undefined) return
+      selection.current = { provider: choice.provider, model: choice.model, ...choice.reasoningEffort === undefined ? {} : { reasoningEffort: choice.reasoningEffort } }
+      const effort = choice.reasoningEffort === undefined ? '' : ` · ${choice.reasoningEffort}`
+      appendLocalNotice({ text: `Model set to ${choice.provider}/${choice.model}${effort} — takes effect on the next step.`, tone: 'info' })
+      tui.requestRender()
+    })
+  }
+
   const openResume = (): void => {
     if (running) { appendLocalNotice({ text: RESUME_RUNNING, tone: 'warning' }); return }
     const query = deps.services.sessionQuery
@@ -538,7 +581,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     paletteTable: () => paletteTable(palette),
     list: () => deps.commands.list(bound),
   }))
-  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession }))
+  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession, openModel }))
 
   // Slash discovery: the provider reads the registry through this closure, so
   // it needs no rebuild when commands come and go (Ruling 4) — an already-open

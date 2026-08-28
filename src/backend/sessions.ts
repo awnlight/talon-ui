@@ -15,7 +15,7 @@ export interface PreflightServices {
   agentStatus(): 'idle' | 'running'
   listSessions(): Promise<SessionRecordLike[]>
   readSession(id: string): Promise<{ events: readonly { type: string; data: unknown }[] }>
-  listProviders(): { id: string }[]
+  listProviders(): readonly { id: string }[]
 }
 export interface SessionServices {
   listSessions(signal?: AbortSignal): Promise<SessionRecordLike[]>

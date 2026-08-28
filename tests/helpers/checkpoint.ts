@@ -25,6 +25,7 @@ export const CHECKPOINTS = [
   'compaction-marker',
   'footer-metrics',
   'untrusted-controls',
+  'model-selector',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

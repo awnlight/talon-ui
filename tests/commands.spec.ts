@@ -66,8 +66,10 @@ describe('registerSessionCommands', () => {
   const deps = () => ({
     opened: 0,
     fresh: 0,
+    models: 0,
     openResume() { this.opened += 1 },
     newSession() { this.fresh += 1 },
+    openModel() { this.models += 1 },
   })
   it('registers the session pair with its descriptions and disposes as one', () => {
     const svc = fakeCommands()
@@ -75,6 +77,7 @@ describe('registerSessionCommands', () => {
     expect([...svc.defs.values()].map((d) => [d.name, d.description])).toEqual([
       ['resume', 'Resume a previous session'],
       ['clear', 'Start a fresh session'],
+      ['model', 'Choose the model for the next step'],
     ])
     off()
     expect(svc.defs.size).toBe(0)
@@ -85,6 +88,7 @@ describe('registerSessionCommands', () => {
     registerSessionCommands(svc as never, d)
     expect(await svc.defs.get('resume')!.handler(invoke)).toEqual({ kind: 'success' })
     expect(await svc.defs.get('clear')!.handler(invoke)).toEqual({ kind: 'success' })
-    expect([d.opened, d.fresh]).toEqual([1, 1])
+    expect(await svc.defs.get('model')!.handler(invoke)).toEqual({ kind: 'success' })
+    expect([d.opened, d.fresh, d.models]).toEqual([1, 1, 1])
   })
 })

@@ -2,11 +2,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
+import { ModelPanel, type ModelPick } from '../src/ui/panels/model-panel.ts'
 import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -589,6 +590,41 @@ describe('talon snapshots', () => {
     await terminal.waitForFrame(before)
     await checkpoint('footer-metrics', terminal)
 
+    await controller.dispose()
+  })
+
+  it('model-selector', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 18)
+    // Mounted through the controller's own PanelManager, like the resume
+    // selector's golden: the real focus and queue path, not a bare render().
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps,
+    })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    let panel: ModelPanel | undefined
+    const picked = controller.panels.enqueue<ModelPick | undefined>({
+      create: (finish) => (panel = new ModelPanel(finish, createPalette(true))),
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)   // the loading frame
+    panel!.setChoices([
+      { provider: 'deepseek', providerName: 'DeepSeek', model: 'deepseek-chat', name: 'Chat', description: 'fast general model', contextWindow: 64_000, efforts: [], defaultEffort: undefined, current: false },
+      { provider: 'deepseek', providerName: 'DeepSeek', model: 'deepseek-reasoner', name: 'Reasoner', description: undefined, contextWindow: 128_000, efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low', current: true },
+      { provider: 'local', providerName: 'local', model: 'my-own-build', name: 'my-own-build', description: undefined, contextWindow: undefined, efforts: [], defaultEffort: undefined, current: false },
+    ])
+    // setChoices paints nothing by itself (the resume selector's precedent):
+    // these keys are the nudge, and they park the highlight on the current
+    // route with its effort cycled one step on.
+    await type(terminal, ['\x1b[B', '\x1b[Z'])
+    await checkpoint('model-selector', terminal)
+
+    const after = terminal.frames
+    terminal.input('\x1b')                // esc on an empty query cancels
+    await expect(picked).resolves.toBeUndefined()
+    await terminal.waitForFrame(after)
     await controller.dispose()
   })
 

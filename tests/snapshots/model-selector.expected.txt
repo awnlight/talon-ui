@@ -1,0 +1,24 @@
+terminal 76x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @4,51
+0| <blank>
+1| "─ model ────────────────────────────────────────────────────────────────────"
+  style 0-75 dim
+2| "⌕ type to filter"
+  style 0-15 dim
+3| "    Chat          DeepSeek · 64k ctx · fast general model"
+  style 8-56 dim
+4| "→ ● Reasoner      DeepSeek · 128k ctx · effort high"
+  style 0-50 inverse
+5| "    my-own-build  local"
+  style 16-22 dim
+6| "↑/↓ · shift+tab effort · enter select · esc clear/cancel"
+  style 0-55 dim
+7| "────────────────────────────────────────────────────────────────────────────"
+  style 0-75 fg-3
+8| "❯"
+  style 0-0 dim
+  style 2-2 inverse
+9| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+10-17| <blank>
