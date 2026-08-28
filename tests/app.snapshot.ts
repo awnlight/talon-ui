@@ -7,7 +7,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -625,6 +625,32 @@ describe('talon snapshots', () => {
     terminal.input('\x1b')                // esc on an empty query cancels
     await expect(picked).resolves.toBeUndefined()
     await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('at-completion', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 16)
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(),
+      ...sessionDeps,
+      services: {
+        ...sessionDeps.services,
+        // `@` reads the composed file-reference service; the paths below are
+        // exactly the shape it answers with (path + kind, never contents).
+        fileReferences: { list: async () => [
+          { path: 'src/app/controller.ts', kind: 'file' as const },
+          { path: 'src/ui', kind: 'directory' as const },
+          { path: 'docs/my plan.md', kind: 'file' as const },
+        ] },
+      },
+    })
+    await terminal.waitForFrame(0)
+    await type(terminal, [...'look at @src'])
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('controller.ts'))
+    await checkpoint('at-completion', terminal)
+
     await controller.dispose()
   })
 

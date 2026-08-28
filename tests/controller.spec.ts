@@ -541,6 +541,52 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('@@ lists sessions ONCE per interaction and rebuilds only after a rebind (spec §8 T4)', async () => {
+    let listings = 0
+    const records = [
+      { header: { id: 's-abc', createdAt: 1, cwd: process.cwd() }, live: false, persisted: true },
+      { header: { id: 's-def', createdAt: 2, cwd: process.cwd() }, live: false, persisted: true },
+    ]
+    const { terminal, controller } = setup({
+      services: { sessionQuery: {
+        listSessions: async () => { listings += 1; return records },
+        readSession: async (id: string) => records.find((r) => r.header.id === id),
+        readTitleSnapshots: async () => new Map(),
+      } as never },
+    })
+    await terminal.waitForFrame(0)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('s-abc'))
+    // pi-tui queried on every keystroke; the enumeration ran once.
+    expect(listings).toBe(1)
+
+    controller.bindAgent(fakeAgent('s2') as never)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(listings).toBe(2))       // a rebind can change the set
+    await controller.dispose()
+  })
+
+  it('@@ is inert where no session query is mounted', async () => {
+    const { terminal, controller } = setup({ services: { sessionQuery: undefined } })
+    await terminal.waitForFrame(0)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(terminal.snapshot()).toContain('@@s')
+    await controller.dispose()
+  })
+
   it('@file is inert where no file-reference service is composed', async () => {
     const { terminal, controller } = setup()
     await terminal.waitForFrame(0)

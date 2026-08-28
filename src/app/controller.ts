@@ -319,6 +319,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // A rebind is a new session: fresh metrics, and the workspace it chdir'd
     // into, with its branch re-read once (spec §3.8).
     metrics = new Metrics()
+    sessionChoices = undefined      // a rebind can add or remove sessions
     workspace = process.cwd()
     branch = gitBranch(workspace)
     queued = 0
@@ -593,12 +594,26 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // closure so `commands/change` needs no rebuild, and the file-reference
   // service — when the composition has one — bound to the CURRENT agent, so a
   // D8 rebind searches the workspace it moved to.
+  // `@@` enumerates sessions, which is real I/O, and pi-tui asks on EVERY
+  // keystroke — so the listing is built once per interaction and cached until
+  // a rebind, where the set can genuinely have changed (/clear, /resume).
+  let sessionChoices: Promise<{ id: string; title: string }[]> | undefined
+  const listSessionChoices = (): Promise<{ id: string; title: string }[]> => {
+    const query = deps.services.sessionQuery
+    /* v8 ignore next -- guarded by the caller: `sessions` answers undefined without a query service, so this cannot be reached */
+    if (query === undefined) return Promise.resolve([])
+    sessionChoices ??= buildResumeCandidates(candidateServices(query), { currentId: bound.id, cwd: process.cwd() })
+      .then((candidates) => candidates.map((candidate) => ({ id: candidate.id, title: candidate.title })))
+      .catch(() => [])
+    return sessionChoices
+  }
   composer.attachCompletion(createCompletionProvider({
     commands: () => deps.commands.list(bound),
     files: () => {
       const service = deps.services.fileReferences
       return service === undefined ? undefined : (query, signal) => service.list(bound, query, signal)
     },
+    sessions: () => deps.services.sessionQuery === undefined ? undefined : listSessionChoices,
   }))
   detachers.push(ctx.on('commands/change', () => composer.refreshCompletion()))
 

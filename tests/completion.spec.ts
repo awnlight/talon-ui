@@ -134,3 +134,60 @@ describe('createCompletionProvider — the @ branch (spec §8 T4)', () => {
     expect(r.lines).toEqual(['x@a.ts '])
   })
 })
+
+describe('createCompletionProvider — the @@ branch (spec §8 T4)', () => {
+  const sessions = [
+    { id: 's-abc', title: 'Fix the login flow' },
+    { id: 's-def', title: 'Ship the webhook' },
+  ]
+  const withSessions = (list: readonly { id: string; title: string }[] = sessions) => {
+    let calls = 0
+    const provider = createCompletionProvider({
+      commands: () => [{ name: 'help', description: 'x' }],
+      files: () => async () => [{ path: 'src/a.ts', kind: 'file' as const }],
+      sessions: () => async () => { calls += 1; return list },
+    })
+    return { provider, calls: () => calls }
+  }
+
+  it('offers sessions on @@, filtered by title or id', async () => {
+    const { provider } = withSessions()
+    const all = await provider.getSuggestions(['@@'], 0, 2, opts)
+    expect(all!.prefix).toBe('@@')
+    expect(all!.items.map((i) => i.value)).toEqual(['@@s-abc', '@@s-def'])
+    expect(all!.items[0]).toMatchObject({ label: 'Fix the login flow', description: 's-abc' })
+
+    const filtered = await provider.getSuggestions(['@@webhook'], 0, 9, opts)
+    expect(filtered!.items.map((i) => i.value)).toEqual(['@@s-def'])
+  })
+
+  it('keeps a single @ on the FILE branch — the second @ is what switches', async () => {
+    const { provider } = withSessions()
+    const files = await provider.getSuggestions(['@src'], 0, 4, opts)
+    expect(files!.items.map((i) => i.value)).toEqual(['@src/a.ts'])
+  })
+
+  it('inserts the session id as ordinary prompt text, finished with a space', () => {
+    const { provider } = withSessions()
+    const r = provider.applyCompletion(['see @@ab tail'], 0, 8, { value: '@@s-abc', label: 'x' }, '@@ab')
+    expect(r.lines).toEqual(['see @@s-abc  tail'])
+    expect(r.cursorCol).toBe('see @@s-abc '.length)
+  })
+
+  it('escapes hostile titles and ids before display (D7.8)', async () => {
+    const { provider } = withSessions([{ id: 's\x1b1', title: 'a‮b' }])
+    const s = await provider.getSuggestions(['@@'], 0, 2, opts)
+    expect(s!.items[0]).toMatchObject({ label: 'a\\u202eb', description: 's\\x1b1' })
+  })
+
+  it('is inert with no session store, when the listing fails, and when nothing matches', async () => {
+    const none = createCompletionProvider({ commands: () => [] })
+    expect(await none.getSuggestions(['@@'], 0, 2, opts)).toBeNull()
+
+    const failing = createCompletionProvider({ commands: () => [], sessions: () => async () => { throw new Error('store is gone') } })
+    expect(await failing.getSuggestions(['@@'], 0, 2, opts)).toBeNull()
+
+    const { provider } = withSessions()
+    expect(await provider.getSuggestions(['@@zzzz'], 0, 6, opts)).toBeNull()
+  })
+})

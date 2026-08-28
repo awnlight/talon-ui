@@ -1,0 +1,17 @@
+terminal 76x16 buffer=normal length=16 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @1,14
+0| "────────────────────────────────────────────────────────────────────────────"
+  style 0-75 dim
+1| "❯ look at @src"
+  style 0-0 dim
+  style 14-14 inverse
+2| "  → src/app/controller.ts           file"
+  style 2-39 inverse
+3| "    src/ui                          directory"
+  style 10-44 dim
+4| "    docs/my plan.md                 file"
+  style 19-39 dim
+5| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+6-15| <blank>

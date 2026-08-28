@@ -5,6 +5,7 @@
  * what the cursor is actually sitting in rather than fighting for the popup:
  *
  *   `/name` at the very start of line 0  → commands
+ *   `@@query`                            → recent sessions
  *   `@path` / `@"path with spaces`       → workspace files
  *
  * What gets inserted is PROMPT TEXT and nothing else. A file mention is a
@@ -27,11 +28,23 @@ export interface FileCandidate { path: string; kind: 'file' | 'directory' }
 /** The slice of `ctx.fileReferences` the composer reads. Absent = no `@`. */
 export type FileReferenceLookup = (query: string, signal: AbortSignal) => Promise<readonly FileCandidate[]>
 
+/** One session offered by `@@`: an id and whatever the title ladder resolved. */
+export interface SessionChoice { id: string; title: string }
+/** Recent sessions, newest first. The caller CACHES — pi-tui asks on every
+ * keystroke, and enumerating sessions is real I/O. */
+export type SessionLookup = () => Promise<readonly SessionChoice[]>
+
 export interface CompletionSources {
   commands: () => readonly CommandChoice[]
   /** Returns `undefined` when no file-reference service is composed. */
   files?: () => FileReferenceLookup | undefined
+  /** Returns `undefined` when no session store is mounted. */
+  sessions?: () => SessionLookup | undefined
 }
+
+/** `@@` opens the session branch: `activeAtToken` reads the whole run as one
+ * `@` token, so a query that itself starts with `@` is the discriminator. */
+const SESSION_SIGIL = '@'
 
 /** Marks a file item so `applyCompletion` knows which grammar to insert with;
  * a command value can never collide, since a command name has no `@`. */
@@ -45,6 +58,7 @@ export function createCompletionProvider(sources: CompletionSources): Autocomple
       if (command !== undefined) return commandSuggestions(sources.commands(), command)
       const token = activeAtToken(line, cursorCol)
       if (token === undefined) return null
+      if (token.query.startsWith(SESSION_SIGIL)) return sessionSuggestions(sources, token.query.slice(1), token.prefix)
       const lookup = sources.files?.()
       if (lookup === undefined) return null
       // pi-tui re-queries on every keystroke; the service owns the shared
@@ -91,6 +105,18 @@ function commandToken(lines: readonly string[], cursorLine: number, cursorCol: n
   const before = (lines[0] ?? '').slice(0, cursorCol)
   if (!before.startsWith('/') || before.includes(' ')) return undefined
   return before
+}
+
+async function sessionSuggestions(sources: CompletionSources, query: string, prefix: string): Promise<AutocompleteSuggestions | null> {
+  const lookup = sources.sessions?.()
+  if (lookup === undefined) return null
+  const sessions = await lookup().catch(() => [])
+  const items: AutocompleteItem[] = fuzzyFilter([...sessions], query, (s) => `${s.title} ${s.id}`).map((session) => ({
+    value: `@@${session.id}`,
+    label: displayText(session.title),
+    description: displayText(session.id),
+  }))
+  return items.length === 0 ? null : { items, prefix }
 }
 
 function commandSuggestions(choices: readonly CommandChoice[], before: string): AutocompleteSuggestions | null {
