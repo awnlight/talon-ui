@@ -10,7 +10,14 @@
  *
  * `ctx.settings` is optional by composition, so everything here degrades to
  * defaults rather than failing: a talon without a settings service is a talon
- * that always starts dark with notifications on. */
+ * that always starts dark with notifications on.
+ *
+ * The SCHEMA is built here and taken by nobody: `ctx.settings.register` wants a
+ * schemastery schema — a CALLABLE that validates and applies defaults, which
+ * the service invokes during registration — and passing it in as a parameter is
+ * exactly what let a plain JSON-Schema object through to a live boot once. Only
+ * this module knows the shape, so only this module supplies it. */
+import z from '@deepseek-ai/schemastery'
 
 /** What talon remembers between runs. Deliberately small. */
 export interface TalonSettings {
@@ -34,10 +41,20 @@ export interface SettingsScopeFacet {
   update(patch: object): Promise<void>
 }
 
-/** The slice of `ctx.settings` talon uses. */
+/** The slice of `ctx.settings` talon uses. `schema` is a schemastery schema,
+ * which the service CALLS — see `TALON_SETTINGS_SCHEMA`. */
 export interface SettingsServiceFacet {
   register(namespace: string, schema: unknown): SettingsScopeFacet
 }
+
+/** What the settings service validates this namespace with, and what a
+ * configuration surface renders it from. Schemastery, not JSON Schema: the
+ * service calls it (`schema(merged)`) to resolve defaults over the stored
+ * section, so a plain object throws `schema is not a function` at boot. */
+export const TALON_SETTINGS_SCHEMA = z.object({
+  scheme: z.union(['dark', 'light'] as const).default(DEFAULT_SETTINGS.scheme).description('Which half of the ANSI-16 palette to resolve.'),
+  notifications: z.boolean().default(DEFAULT_SETTINGS.notifications).description('Notify an unfocused terminal when a turn ends.'),
+})
 
 export const TALON_NAMESPACE = 'talon'
 
@@ -74,13 +91,12 @@ export interface SettingsBinding {
  * a user editing the document by hand should see the UI follow. */
 export function bindSettings(
   service: SettingsServiceFacet | undefined,
-  schema: unknown,
   onChange: (settings: TalonSettings) => void,
 ): SettingsBinding {
   if (service === undefined) {
     return { current: () => DEFAULT_SETTINGS, update: async () => {}, dispose: () => {} }
   }
-  const scope = service.register(TALON_NAMESPACE, schema)
+  const scope = service.register(TALON_NAMESPACE, TALON_SETTINGS_SCHEMA)
   let settings = resolveSettings(scope.get())
   const stop = scope.watch((next) => {
     settings = resolveSettings(next)

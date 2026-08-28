@@ -154,15 +154,6 @@ const PASTE_NOTICE: Record<'unavailable' | 'empty' | 'failed', (reason: string) 
 }
 const MODEL_FAILED = 'Could not read the model catalog:'
 const AGENTS_UNAVAILABLE = 'Subagents are not available in this composition.'
-/** The schema `ctx.settings` renders and validates this namespace with. Kept
- * as plain JSON Schema so talon needs no schemastery import (spec §3.10). */
-const TALON_SETTINGS_SCHEMA = {
-  type: 'object',
-  properties: {
-    scheme: { type: 'string', enum: ['dark', 'light'], default: 'dark', description: 'Which half of the ANSI-16 palette to resolve.' },
-    notifications: { type: 'boolean', default: true, description: 'Notify an unfocused terminal when a turn ends.' },
-  },
-} as const
 const AGENTS_FAILED = 'Could not list the subagents:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -241,7 +232,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   notifier.start()
   // Persisted PREFERENCE (spec §3.10) — never session UI state. A committed
   // change, including one made by editing the document by hand, applies here.
-  const settings = bindSettings(deps.services.settings, TALON_SETTINGS_SCHEMA, (next) => {
+  const settings = bindSettings(deps.services.settings, (next) => {
     notifier.setEnabled(next.notifications)
     tui.requestRender()
   })

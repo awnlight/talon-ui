@@ -60,6 +60,7 @@
     "@deepseek-ai/dsh-agent": "*",
     "@deepseek-ai/dsh-agent-loop": "*",
     "@deepseek-ai/dsh-commands": "*",
+    "@deepseek-ai/schemastery": "*",
     "@deepseek-ai/dsh-file-reference": "*",
     "@deepseek-ai/dsh-file-reference-local": "*",
     "@deepseek-ai/dsh-llm": "*",
