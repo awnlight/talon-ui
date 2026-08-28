@@ -24,6 +24,7 @@ export const CHECKPOINTS = [
   'palette-table',
   'compaction-marker',
   'footer-metrics',
+  'untrusted-controls',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

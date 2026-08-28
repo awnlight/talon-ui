@@ -94,3 +94,14 @@ describe('paletteTable (D6: the table cannot drift from the spec)', () => {
     expect(paletteTable(createPalette(true, 'light'))).toContain('34')   // the one scheme-dependent role
   })
 })
+
+describe('displayText also neutralizes the BIDI controls (D7.8, T3 adversarial)', () => {
+  it('escapes the overrides, embeddings, isolates and marks — and nothing else', () => {
+    expect(displayText('a\u202eevil\u202c')).toBe('a\\u202eevil\\u202c')
+    for (const code of [0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069]) {
+      expect(displayText(String.fromCodePoint(code)), code.toString(16)).toBe(`\\u${code.toString(16)}`)
+    }
+    expect(displayText('héllo 中文 🙂\n次行')).toBe('héllo 中文 🙂\n次行')   // ordinary text is untouched
+    expect(displayText('a\x1bb')).toBe('a\\x1bb')                          // the C0/C1 rule is unchanged
+  })
+})

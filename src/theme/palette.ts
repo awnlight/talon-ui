@@ -81,11 +81,21 @@ export function createPalette(enabled: boolean, scheme: ColorScheme = 'dark', tr
 }
 
 /** Neutralize terminal controls at the display boundary (spec D7.8): every
- * C0/C1 control except LF becomes a visible \xNN escape BEFORE styling, so
- * untrusted text can never inject OSC/CSI/cursor/title sequences. */
+ * C0/C1 control except LF becomes a visible escape BEFORE styling, so untrusted
+ * text can never inject OSC/CSI/cursor/title sequences.
+ *
+ * The Unicode BIDI controls join them (U+200E/200F, the U+202A-E embeddings and
+ * overrides, the U+2066-9 isolates). They are not control CHARACTERS — they are
+ * printable format codepoints — but they reorder the glyphs around them, so a
+ * tool result can make a rendered row read as something other than what it
+ * says. Escaping is the same answer for the same reason: what a card shows must
+ * be what the log recorded. */
 export function displayText(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/gu, (c) => `\\x${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)
+  return text.replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, (c) => {
+    const code = c.codePointAt(0)!
+    return code <= 0xff ? `\\x${code.toString(16).padStart(2, '0')}` : `\\u${code.toString(16).padStart(4, '0')}`
+  })
 }
 
 /** The brand teal, three stops (spec D6). talon's ONLY truecolor surface. */
