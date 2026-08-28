@@ -1,4 +1,5 @@
 import type { AppEvent, ContentBlockLike, Notice } from './app-events.js'
+import type { UsageSample } from './metrics.js'
 
 interface RawEvent { type: string; data: unknown; time?: number }
 
@@ -10,6 +11,19 @@ function turnEndNotice(reason: { kind: string; error?: { message?: string } }): 
     case 'max-tokens': return { text: 'Turn stopped: max tokens reached.', tone: 'warning' }
     case 'blocked': return { text: 'Turn blocked.', tone: 'warning' }
     default: return { text: `Turn ended: ${reason.kind}.`, tone: 'warning' } // exhaustive-with-named-default (spec §3.2)
+  }
+}
+
+/** dsh's TokenUsage, normalized to the four buckets the footer folds. The
+ * optional cache buckets are absent on providers that do not cache. */
+function usageOf(raw: unknown): UsageSample {
+  const usage = (raw ?? {}) as Record<string, unknown>
+  const count = (name: string): number => (typeof usage[name] === 'number' ? usage[name] : 0)
+  return {
+    inputTokens: count('inputTokens'),
+    outputTokens: count('outputTokens'),
+    cacheReadTokens: count('cacheReadTokens'),
+    cacheWriteTokens: count('cacheWriteTokens'),
   }
 }
 
@@ -54,7 +68,10 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
     case 'step/end':
       return [{ kind: 'step-end', turn: d.turn, step: d.step, time: event.time }]
     case 'assistant/chunk': {
-      const chunk = d.chunk as { type: string; index?: number; text?: string }
+      const chunk = d.chunk as { type: string; index?: number; text?: string; usage?: unknown }
+      // The early usage sample: it survives a request that fails after it, and
+      // the settled message reports the same step again — the fold replaces.
+      if (chunk.type === 'usage') return [{ kind: 'usage', turn: d.turn, step: d.step, usage: usageOf(chunk.usage) }]
       if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
         return [{
           kind: 'stream-delta', turn: d.turn, step: d.step, index: chunk.index ?? 0,
@@ -64,7 +81,25 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       return []
     }
     case 'assistant/message':
-      return [{ kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] }]
+      return [
+        { kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] },
+        ...d.usage === undefined ? [] : [{ kind: 'usage' as const, turn: d.turn, step: d.step, usage: usageOf(d.usage) }],
+      ]
+    case 'request/context':
+      return [{
+        kind: 'request-context',
+        model: String(d.model ?? ''),
+        contextWindow: typeof d.contextWindow === 'number' ? d.contextWindow : undefined,
+      }]
+    case 'agent/inbox/spliced': {
+      const inserted = Array.isArray(d.inserted) ? d.inserted.length : 0
+      return [{
+        kind: 'inbox-spliced',
+        inserted,
+        removed: typeof d.removedCount === 'number' ? d.removedCount : 0,
+        cancelled: d.outcome === 'canceled',
+      }]
+    }
     case 'tool/call': {
       // dsh records `arguments` as the model's RAW unparsed JSON string
       // (session types.d.ts:291). Object-shaped fixtures keep working: they

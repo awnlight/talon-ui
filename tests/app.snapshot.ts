@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -55,6 +55,12 @@ async function type(terminal: HeadlessTerminal, keys: string[]): Promise<void> {
 }
 
 describe('talon snapshots', () => {
+  // The footer prints the workspace, and reads the git branch out of its
+  // `.git/HEAD`: freeze the cwd so no golden embeds the machine that ran it
+  // (the fake path has no repository, so the branch segment stays absent —
+  // gitBranch's own behaviour is pinned by tests/controller.spec.ts).
+  beforeEach(() => { vi.spyOn(process, 'cwd').mockReturnValue('/workspace/talon-ui') })
+
   it('conversation-roundtrip', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
     const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
@@ -559,6 +565,29 @@ describe('talon snapshots', () => {
     send('user/message', { content: [{ type: 'text', text: 'Ship it.' }], source: { kind: 'user' } })
     await terminal.waitForFrame(before)
     await checkpoint('compaction-marker', terminal)
+
+    await controller.dispose()
+  })
+
+  it('footer-metrics', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(14, 88)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The whole template at rest: workspace, model, cache and context folded
+    // from durable events, with two messages waiting behind an idle agent.
+    // (No branch: the frozen workspace has no repository — gitBranch's own
+    // behaviour is pinned in tests/controller.spec.ts.)
+    send('user/message', { content: [{ type: 'text', text: 'Rename the flag.' }], source: { kind: 'user' } })
+    send('request/context', { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 64000 })
+    send('assistant/message', {
+      turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Renamed it.' }] },
+      usage: { inputTokens: 4200, outputTokens: 380, cacheReadTokens: 31_000, cacheWriteTokens: 400 },
+    })
+    send('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    send('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{}, {}] })
+    await terminal.waitForFrame(before)
+    await checkpoint('footer-metrics', terminal)
 
     await controller.dispose()
   })

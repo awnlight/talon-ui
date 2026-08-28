@@ -4,6 +4,7 @@
  * (discoverability is a first-class ergonomic requirement, spec D5/§4.3). */
 import { Container, Editor, Text, type AutocompleteProvider, type TUI } from '@earendil-works/pi-tui'
 import type { Palette } from '../../theme/palette.js'
+import { Footer, type FooterView } from './footer.js'
 
 export type ComposerState = 'idle' | 'streaming' | 'waiting'
 
@@ -20,9 +21,34 @@ const BORDER_SENTINEL = '\x00'
  * (editor.js:1567-1568). */
 const CURSOR_RIGHT = '\x1b[C'
 
+/** The prompt, and the phase glyphs that replace it IN PLACE while a turn runs
+ * (spec §4.3) — no extra row, no extra column, no spinner. */
+export type GlyphPhase = 'idle' | 'wait' | 'thinking' | 'responding' | 'tools' | 'compacting'
+const GLYPHS: Record<GlyphPhase, string> = {
+  idle: '❯', wait: '◌', thinking: '◍', responding: '◉', tools: '⚙', compacting: '⊙',
+}
+const PROMPT_WIDTH = 2                 // the glyph plus its one space
+/** One timer, 50ms, running ONLY while a turn is: idle costs zero CPU. */
+const GLYPH_TICK_MS = 50
+/** A phase change fades its new glyph in over this long, so a transition
+ * never reads as a flicker. */
+const FADE_MS = 300
+/** The breathing period the fade rides on. */
+const BREATHE_MS = 1400
+/** Below this the glyph is not drawn at all — a real fade, not a blink. */
+const MIN_OPACITY = 0.12
+
 class FramelessEditor extends Editor {
+  /** Supplied by the Composer: the `❯`/phase glyph column. The editor lays
+   * itself out `PROMPT_WIDTH` narrower and every row is shifted right by it,
+   * so the prompt sits on the input line itself and pi-tui's cursor marker —
+   * a positional marker inside the row — moves with the text. */
+  prompt!: () => string          // assigned by the Composer that builds it
+
   render(width: number): string[] {
-    return super.render(width).filter((row) => !row.startsWith(BORDER_SENTINEL))
+    const rows = super.render(Math.max(1, width - PROMPT_WIDTH)).filter((row) => !row.startsWith(BORDER_SENTINEL))
+    const indent = ' '.repeat(PROMPT_WIDTH)
+    return rows.map((row, i) => (i === 0 ? this.prompt() : indent) + row)
   }
 }
 
@@ -32,8 +58,12 @@ export class Composer {
   onSubmit: ((text: string) => void) | undefined
   private state: ComposerState = 'idle'
   private readonly hint: Text
+  private readonly footerLine: Footer
+  private phase: GlyphPhase = 'idle'
+  private phaseSince = 0
+  private timer: NodeJS.Timeout | undefined
 
-  constructor(tui: TUI, private readonly palette: Palette) {
+  constructor(private readonly tui: TUI, private readonly palette: Palette) {
     this.editor = new FramelessEditor(tui, {
       borderColor: (s) => BORDER_SENTINEL + s, // marks border rows for FramelessEditor.render() to filter
       selectList: {
@@ -47,10 +77,60 @@ export class Composer {
       },
     }, { paddingX: 0 })
     this.editor.onSubmit = (text) => { if (text.trim() !== '') this.onSubmit?.(text) }
+    ;(this.editor as FramelessEditor).prompt = () => this.promptCell()
     this.hint = new Text('', 0, 0)
+    // Fourth child of the composer container, so it rides with the composer
+    // through a D8 rebind exactly as the rule and the hint do.
+    this.footerLine = new Footer(palette)
     this.container.addChild(this.ruleComponent())
     this.container.addChild(this.editor)
     this.container.addChild(this.hint)
+    this.container.addChild(this.footerLine)
+  }
+
+  setFooter(view: FooterView): void { this.footerLine.set(view) }
+
+  /** The live phase (spec §4.3). A CHANGE restarts the fade, so the new glyph
+   * arrives smoothly instead of snapping. */
+  setPhase(phase: GlyphPhase): void {
+    if (this.phase === phase) return
+    this.phase = phase
+    this.phaseSince = Date.now()
+  }
+
+  /** The single animation timer (ruling 11): started when a turn starts,
+   * stopped when it ends, `unref`'d so it can never hold the process open. */
+  setAnimating(animating: boolean): void {
+    if (animating === (this.timer !== undefined)) return
+    if (!animating) {
+      clearInterval(this.timer)
+      this.timer = undefined
+      return
+    }
+    this.phaseSince = Date.now()
+    this.timer = setInterval(() => this.tui.requestRender(), GLYPH_TICK_MS)
+    this.timer.unref()
+  }
+
+  /** Stop the timer on teardown; the controller's disposer calls this. */
+  dispose(): void { this.setAnimating(false) }
+
+  /** The prompt column: `❯ ` at rest, the phase glyph while a turn runs. The
+   * fade is truecolor-only — an ANSI-16 terminal has no shades of dim to fade
+   * THROUGH, so it gets the envelope-gated steady glyph instead (spec §4.3). */
+  private promptCell(): string {
+    const glyph = GLYPHS[this.phase]
+    if (this.phase === 'idle') return `${this.palette.dim(glyph)} `
+    // The fade exists to smooth an ANIMATED transition; with no timer running
+    // there is nothing to smooth, and a static frame must show its glyph.
+    const elapsed = this.timer === undefined ? FADE_MS : Date.now() - this.phaseSince
+    const envelope = Math.min(1, elapsed / FADE_MS)
+    if (!this.palette.trueColor) return `${envelope < MIN_OPACITY ? ' ' : this.palette.dim(glyph)} `
+    const breathe = 0.55 + 0.45 * Math.cos((elapsed / BREATHE_MS) * 2 * Math.PI)
+    const opacity = envelope * breathe
+    if (opacity < MIN_OPACITY) return '  '
+    const level = Math.round(0x33 + opacity * (0xbb - 0x33))
+    return `\x1b[38;2;${level};${level};${level}m${glyph}\x1b[39m `
   }
 
   private ruleComponent(): Text {

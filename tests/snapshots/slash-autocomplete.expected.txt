@@ -1,18 +1,19 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @1,1
+cursor hidden @1,3
 0| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-1| "/"
-  style 1-1 inverse
-2| "→ exit        Exit talon"
-  style 0-23 inverse
-3| "  help        List available commands"
-  style 6-36 dim
-4| "  quit        Exit talon (alias of /exit)"
-  style 6-40 dim
-5| "  status      Show session status"
-  style 8-32 dim
+1| "❯ /"
+  style 0-0 dim
+  style 3-3 inverse
+2| "  → exit        Exit talon"
+  style 2-25 inverse
+3| "    help        List available commands"
+  style 8-38 dim
+4| "    quit        Exit talon (alias of /exit)"
+  style 8-42 dim
+5| "    status      Show session status"
+  style 10-34 dim
 6| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
 7-17| <blank>

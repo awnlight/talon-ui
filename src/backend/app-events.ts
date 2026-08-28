@@ -1,3 +1,4 @@
+import type { UsageSample } from './metrics.js'
 /** Internal UI vocabulary. The UI state machine consumes ONLY this union;
  * dsh's event surface is translated at the contract boundary (spec D1). */
 export interface Notice { text: string; tone: 'info' | 'warning' | 'error' }
@@ -18,6 +19,12 @@ export type AppEvent =
   // A failed model request (spec §4.1): the partial stream is WITHDRAWN and
   // this notice takes its place. `limit` is '∞' under the always-retry mode.
   | { kind: 'retry-notice'; turn: number; step: number; retry: number; limit: number | '∞'; delayMs: number; message: string }
+  // Footer metrics (spec §3.8). One step reports usage more than once — an
+  // early chunk and the settled message — so the fold REPLACES per key.
+  | { kind: 'usage'; turn: number; step: number; usage: UsageSample }
+  | { kind: 'request-context'; model: string; contextWindow: number | undefined }
+  // The queued badge (spec §3.2): what the inbox spliced in or took away.
+  | { kind: 'inbox-spliced'; inserted: number; removed: number; cancelled: boolean }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }

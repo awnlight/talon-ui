@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Text } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
@@ -106,6 +109,7 @@ function setup(overrides: {
   agents?: ControllerDeps['agents']
   createRootAgent?: ControllerDeps['createRootAgent']
   services?: Partial<ControllerDeps['services']>
+  palette?: ControllerDeps['palette']
 } = {}) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
@@ -117,7 +121,7 @@ function setup(overrides: {
   const commands = { ...fakeCommandService(), ...overrides.commands }
   const session = fakeSessionDeps()
   const controller = createController({
-    ctx, agent, terminal, palette: createPalette(overrides.enabled ?? false), exit, userQuestions, commands,
+    ctx, agent, terminal, palette: overrides.palette ?? createPalette(overrides.enabled ?? false), exit, userQuestions, commands,
     agents: overrides.agents ?? session.agents,
     createRootAgent: overrides.createRootAgent ?? session.createRootAgent,
     services: { ...session.services, ...overrides.services },
@@ -345,6 +349,172 @@ describe('controller', () => {
     await terminal.waitForFrame(before)
     expect(terminal.snapshot()).not.toContain('Context being compacted')
     expect(terminal.snapshot()).toContain('… earlier context was compacted …')   // the marker DOES replay
+    await controller.dispose()
+  })
+
+  it('drives the footer from durable events, and the git branch from .git/HEAD (spec §3.8)', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'talon-footer-'))
+    mkdirSync(join(repo, '.git'))
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/feat/metrics\n')
+    vi.spyOn(process, 'cwd').mockReturnValue(repo)
+    // Wide enough that the whole template fits: the narrow-truncation rule is
+    // the footer spec's own business (tests/footer.spec.ts).
+    const { ctx, agent, terminal, controller } = setup({ cols: 160 })
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'request/context', data: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 1000 } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: {
+      turn: 1, step: 1, message: { content: [{ type: 'text', text: 'done' }] },
+      usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 300, cacheWriteTokens: 100 },
+    } })
+    await terminal.waitForFrame(before)
+    const snap = terminal.snapshot()
+    expect(snap).toContain('feat/metrics')                       // read once, straight off .git/HEAD
+    expect(snap).toContain('deepseek-chat')
+    expect(snap).toContain('cache 60%')                          // 300 / (100+300+100)
+    expect(snap).toContain('52% ctx')                            // (500 billed + 20 out) / 1000
+
+    // The queued badge counts what the inbox spliced in, floors at zero…
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [{}, {}] } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⏳ 2 queued')
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, removedCount: 9, inserted: [] } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('queued')
+
+    // …and clears hard when the agent stops running (spec §3.2).
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [{}] } })
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    await terminal.waitForFrame(before)
+    before = terminal.frames
+    agent.status = 'idle'
+    ctx.emit('agent/status', { agent, status: 'idle' })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('queued')
+    await controller.dispose()
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('leaves the branch segment out for a DETACHED head, and abbreviates a workspace under home', async () => {
+    const detached = mkdtempSync(join(tmpdir(), 'talon-detached-'))
+    mkdirSync(join(detached, '.git'))
+    writeFileSync(join(detached, '.git', 'HEAD'), '9f1c0a2b3c4d5e6f\n')   // a raw sha: no branch to name
+    vi.spyOn(process, 'cwd').mockReturnValue(detached)
+    const { terminal, controller } = setup({ cols: 160 })
+    await terminal.waitForFrame(0)
+    expect(terminal.snapshot()).not.toContain('9f1c0a2b')
+    await controller.dispose()
+    rmSync(detached, { recursive: true, force: true })
+
+    // The home directory itself abbreviates to a bare `~`.
+    vi.spyOn(process, 'cwd').mockReturnValue(homedir())
+    const home = setup({ cols: 160 })
+    await home.terminal.waitForFrame(0)
+    const before = home.terminal.frames
+    home.ctx.emit('session/event', home.agent.session, { type: 'request/context', data: { model: 'deepseek-chat' } })
+    await home.terminal.waitForFrame(before)
+    expect(home.terminal.snapshot()).toContain('"~ · deepseek-chat"')
+    await home.controller.dispose()
+  })
+
+  it('re-reads the workspace on a rebind, and keeps the glyph running if the new agent is', async () => {
+    vi.spyOn(process, 'cwd').mockReturnValue(join(tmpdir(), 'talon-not-a-repo'))
+    const { terminal, controller } = setup({ cols: 160 })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    const resumed = fakeAgent('s2')
+    resumed.status = 'running'
+    controller.bindAgent(resumed as never)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('talon-not-a-repo')
+    await controller.dispose()
+  })
+
+  it('leaves the branch segment out where there is no repository, and cancels a splice to zero', async () => {
+    vi.spyOn(process, 'cwd').mockReturnValue(join(tmpdir(), 'talon-not-a-repo'))
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [{}, {}] } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⏳ 2 queued')
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [], outcome: 'canceled' } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('queued')
+    await controller.dispose()
+  })
+
+  it('runs ONE glyph timer, only while a turn is, and cycles the phase off live dispatch (ruling 11)', async () => {
+    // A new phase fades IN over 300ms, so the clock has to advance between the
+    // event that changes it and the paint that shows it — which is exactly what
+    // happens in a live terminal. Freezing it at the transition would render
+    // the fade's first, deliberately-blank instant forever.
+    let clock = 1_755_100_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    expect(terminal.snapshot()).toContain('| "❯"')               // idle: the prompt itself
+
+    /** Emit, let the fade complete, and settle the frame it produced. */
+    const settled = async (emit: () => void): Promise<string> => {
+      const before = terminal.frames
+      emit()
+      clock += 400
+      await terminal.waitForFrame(before)
+      return terminal.snapshot()
+    }
+
+    agent.status = 'running'
+    expect(await settled(() => {
+      ctx.emit('agent/status', { agent, status: 'running' })
+      ctx.emit('session/event', agent.session, { type: 'step/start', data: { turn: 1, step: 1 } })
+    })).toContain('| "◌"')                                       // waiting on the model
+
+    for (const [chunk, glyph] of [[{ type: 'reasoning-delta', index: 0, text: 'why' }, '◍'], [{ type: 'text-delta', index: 1, text: 'so' }, '◉']] as const) {
+      const snap = await settled(() => ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk } }))
+      expect(snap, glyph).toContain(`| "${glyph}"`)
+    }
+    expect(await settled(() => ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{"command":"ls"}' } })))
+      .toContain('| "⚙"')
+    expect(await settled(() => ctx.emit('session/event', agent.session, { type: 'compaction/start', data: { compactionId: 'k1', turn: 1 } })))
+      .toContain('| "⊙"')
+
+    // The turn ends: the prompt returns and the timer stops — zero idle CPU.
+    agent.status = 'idle'
+    expect(await settled(() => {
+      ctx.emit('session/event', agent.session, { type: 'compaction/end', data: { compactionId: 'k1', turn: 1 } })
+      ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+      ctx.emit('agent/status', { agent, status: 'idle' })
+    })).toContain('| "❯"')
+    const framesWhenIdle = terminal.frames
+    await new Promise((r) => setTimeout(r, 160))                 // three ticks would have passed
+    expect(terminal.frames).toBe(framesWhenIdle)
+    await controller.dispose()
+  })
+
+  it('fades the glyph in over 300ms, and paints it in truecolor greys only where the terminal has them', async () => {
+    let clock = 1_755_100_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const { ctx, agent, terminal, controller } = setup({ palette: createPalette(true, 'dark', true) })
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    agent.status = 'running'
+    ctx.emit('agent/status', { agent, status: 'running' })
+    ctx.emit('session/event', agent.session, { type: 'step/start', data: { turn: 1, step: 1 } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('◌')               // the fade's first instant: below the floor
+
+    before = terminal.frames
+    clock += 400
+    ctx.emit('session/event', agent.session, { type: 'step/end', data: { turn: 1, step: 1 } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('◌')
+    expect(terminal.snapshot()).toMatch(/rgb-fg/)                // greys, only under truecolor
     await controller.dispose()
   })
 
@@ -608,7 +778,7 @@ describe('controller', () => {
     registry.push({ name: 'status', description: 'Show session status' })
     ctx.emit('commands/change')
     await vi.waitFor(() => expect(terminal.snapshot()).toContain('Show session status'))
-    expect(terminal.snapshot()).toContain('| "/"') // the composer still holds a bare slash: nothing was accepted
+    expect(terminal.snapshot()).toContain('| "❯ /"') // the composer still holds a bare slash: nothing was accepted
     await controller.dispose()
   })
   it('Enter on a highlighted completion applies it and falls through to submit', async () => {

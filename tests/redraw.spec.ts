@@ -85,7 +85,11 @@ function mount() {
   const ctx = fakeCtx()
   const agent = fakeAgent()
   agent.ctx = ctx
-  const terminal = new HeadlessTerminal(60, 14)
+  // 20 rows, not 14: the footer line (Task 15) costs the composer one more row,
+  // and the in-viewport phase of the gate below must stay in-viewport — a
+  // shrink from a SCROLLED transcript is the one unavoidable redraw, pinned by
+  // its own test rather than smuggled into this one.
+  const terminal = new HeadlessTerminal(60, 20)
   const userQuestions = fakeQuestionService()
   const commands = roundtripCommandService((event) => ctx.emit('session/event', agent.session, event))
   const controller = createController({

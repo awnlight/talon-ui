@@ -1,6 +1,6 @@
-terminal 108x20 buffer=normal length=20 base=0 viewport=0
+terminal 108x20 buffer=normal length=21 base=1 viewport=1
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @18,0
+cursor hidden @17,2
 0| "/palette"
   style 0-7 dim
 1| <blank>
@@ -36,6 +36,10 @@ cursor hidden @18,0
   style 0-62 dim
 17| "────────────────────────────────────────────────────────────────────────────────────────────────────────────"
   style 0-107 dim
-18| <blank>
+18| "❯"
+  style 0-0 dim
+  style 2-2 inverse
 19| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
+20| "/workspace/talon-ui"
+  style 0-18 dim

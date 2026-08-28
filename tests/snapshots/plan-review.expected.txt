@@ -1,6 +1,6 @@
 terminal 72x24 buffer=normal length=24 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @14,72
+cursor hidden @15,0
 0| <blank>
 1| "─ plan review ──────────────────────────────────────────────────────────"
   style 0-71 dim
@@ -19,7 +19,9 @@ cursor hidden @14,72
   style 0-62 dim
 12| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-13| <blank>
+13| "❯"
+  style 0-0 dim
+  style 2-2 inverse
 14| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
 15-23| <blank>

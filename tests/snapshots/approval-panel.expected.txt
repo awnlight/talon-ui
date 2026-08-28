@@ -1,6 +1,6 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @9,72
+cursor hidden @10,19
 0| "◇ bash · pnpm test"
   style 0-17 fg-3
 1| "└ running…"
@@ -18,7 +18,11 @@ cursor hidden @9,72
   style 32-41 dim
 7| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-8| <blank>
+8| "⚙"
+  style 0-0 dim
+  style 2-2 inverse
 9| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-10-17| <blank>
+10| "/workspace/talon-ui"
+  style 0-18 dim
+11-17| <blank>

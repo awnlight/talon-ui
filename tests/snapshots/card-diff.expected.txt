@@ -1,6 +1,6 @@
 terminal 72x22 buffer=normal length=22 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @16,0
+cursor hidden @16,2
 0| "You"
   style 0-2 bold underline
 1| "Rename the flag."
@@ -37,7 +37,11 @@ cursor hidden @16,0
   style 0-15 dim
 15| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-16| <blank>
+16| "⚙"
+  style 0-0 dim
+  style 2-2 inverse
 17| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-18-21| <blank>
+18| "/workspace/talon-ui"
+  style 0-18 dim
+19-21| <blank>

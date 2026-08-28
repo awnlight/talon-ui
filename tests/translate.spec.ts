@@ -34,8 +34,8 @@ describe('translateSessionEvent', () => {
     const out = translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 2, chunk: { type: 'reasoning-delta', index: 1, text: 'hm' } } })
     expect(out[0]).toMatchObject({ kind: 'stream-delta', block: 'reasoning' })
   })
-  it('ignores non-visual chunks (usage, tool-call-delta, finish)', () => {
-    for (const chunk of [{ type: 'usage', usage: {} }, { type: 'tool-call-delta', index: 0, id: 'c', argumentsDelta: '{' }, { type: 'finish' }])
+  it('ignores non-visual chunks (tool-call-delta, finish)', () => {
+    for (const chunk of [{ type: 'tool-call-delta', index: 0, id: 'c', argumentsDelta: '{' }, { type: 'finish' }])
       expect(translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 1, chunk } })).toEqual([])
   })
   it('maps assistant/message to stream-settle with authoritative content', () => {
@@ -238,5 +238,34 @@ describe('retry + interrupted (spec §4.1, rulings 8 and 9)', () => {
     expect(translateSessionEvent({ type: 'assistant/message', data: {
       turn: 1, step: 1, interrupted: true, message: { content: [{ type: 'text', text: 'the delivered prefix' }] },
     } })).toEqual([{ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'the delivered prefix' }] }])
+  })
+})
+
+describe('footer metrics events (spec §3.8/§3.2)', () => {
+  it('normalizes a usage report, defaulting every bucket a provider omits', () => {
+    expect(translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 2, chunk: { type: 'usage', usage: { inputTokens: 10 } } } }))
+      .toEqual([{ kind: 'usage', turn: 1, step: 2, usage: { inputTokens: 10, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }])
+    expect(translateSessionEvent({ type: 'assistant/chunk', data: { turn: 1, step: 2, chunk: { type: 'usage' } } })[0])
+      .toMatchObject({ usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
+  })
+  it('reports a settled message and its usage together, and the message alone without it', () => {
+    const both = translateSessionEvent({ type: 'assistant/message', data: {
+      turn: 1, step: 1, message: { content: [{ type: 'text', text: 'hi' }] }, usage: { inputTokens: 5, outputTokens: 2 },
+    } })
+    expect(both.map((e) => e.kind)).toEqual(['stream-settle', 'usage'])
+    expect(translateSessionEvent({ type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [] } } }).map((e) => e.kind))
+      .toEqual(['stream-settle'])
+  })
+  it('carries the model and the window, and tolerates a request that declares no window', () => {
+    expect(translateSessionEvent({ type: 'request/context', data: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 64000 } }))
+      .toEqual([{ kind: 'request-context', model: 'deepseek-chat', contextWindow: 64000 }])
+    expect(translateSessionEvent({ type: 'request/context', data: { provider: 'p' } }))
+      .toEqual([{ kind: 'request-context', model: '', contextWindow: undefined }])
+  })
+  it('counts an inbox splice both ways, and reads a cancelled one as a clear', () => {
+    expect(translateSessionEvent({ type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, inserted: [{}, {}] } }))
+      .toEqual([{ kind: 'inbox-spliced', inserted: 2, removed: 0, cancelled: false }])
+    expect(translateSessionEvent({ type: 'agent/inbox/spliced', data: { target: 'next-turn', start: 0, removedCount: 3, outcome: 'canceled' } }))
+      .toEqual([{ kind: 'inbox-spliced', inserted: 0, removed: 3, cancelled: true }])
   })
 })

@@ -1,6 +1,6 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @15,0
+cursor hidden @15,2
 0| "You"
   style 0-2 bold underline
 1| "Stream the fix."
@@ -29,7 +29,10 @@ cursor hidden @15,0
   style 0-2 dim
 14| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-15| <blank>
+15| "◉"
+  style 0-0 dim
+  style 2-2 inverse
 16| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-17| <blank>
+17| "/workspace/talon-ui"
+  style 0-18 dim

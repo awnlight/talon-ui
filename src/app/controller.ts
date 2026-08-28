@@ -1,6 +1,9 @@
 /** One mounted talon channel: TuiMainScreen + Transcript + Composer +
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Container, matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import type { CommandDefinition, CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
@@ -8,11 +11,12 @@ import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai
 import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
 import { registerSessionCommands, registerTalonCommands } from '../backend/commands.js'
+import { Metrics } from '../backend/metrics.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import { displayText, type Palette, paletteTable } from '../theme/palette.js'
-import { Composer } from '../ui/composer/composer.js'
+import { Composer, type GlyphPhase } from '../ui/composer/composer.js'
 import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
@@ -99,6 +103,26 @@ const GOODBYE = (sessionId: string): string => `To resume: dsh --profile talon, 
 const RESUME_RUNNING = 'Resume is not available while a turn is running.'
 /** The live compaction indicator (spec §4.1). */
 const COMPACTING = (seconds: number): string => `Context being compacted ${seconds}s`
+
+/** `~`-abbreviate the home prefix, exactly as the terminal card does. */
+function abbreviateHome(path: string): string {
+  const home = homedir()
+  if (path === home) return '~'
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
+}
+
+/** The current git branch, read ONCE per bind straight off `.git/HEAD` — no
+ * watcher, no subprocess (spec §3.8). A detached HEAD, an unreadable file or
+ * no repository at all all answer `undefined`, and the footer drops the
+ * segment. A branch change surfaces on the next resume or /clear. */
+function gitBranch(cwd: string): string | undefined {
+  try {
+    const head = readFileSync(join(cwd, '.git', 'HEAD'), 'utf8').trim()
+    return head.startsWith('ref: refs/heads/') ? head.slice('ref: refs/heads/'.length) : undefined
+  } catch {
+    return undefined
+  }
+}
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -171,6 +195,18 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
   // end, and never reconstructed from replayed history.
   let compactingSince: number | undefined
+  // Footer state. Metrics fold from durable events; cwd and branch are read at
+  // bind time; the queued badge counts what the inbox spliced in (spec §3.2).
+  let metrics = new Metrics()
+  let workspace = process.cwd()
+  let branch = gitBranch(workspace)
+  let queued = 0
+  let phase: GlyphPhase = 'idle'
+  const syncFooter = (): void => {
+    const view = metrics.read()
+    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued })
+  }
+  const setPhase = (next: GlyphPhase): void => { phase = next; composer.setPhase(next) }
   const showCompaction = (): void => {
     if (compactingSince === undefined) return
     composer.flashHint(COMPACTING(Math.floor((Date.now() - compactingSince) / 1000)), 'warning')
@@ -204,17 +240,37 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       if (appEvent.kind === 'compaction-live') {
         compactingSince = appEvent.phase === 'start' ? Date.now() : undefined
         if (compactingSince === undefined) syncComposer()
+        setPhase(compactingSince === undefined ? 'wait' : 'compacting')
       }
+      // The glyph reads the SAME live stream the transcript does (spec §4.3):
+      // waiting on the model, thinking, answering, or running a tool.
+      if (appEvent.kind === 'step-start') setPhase('wait')
+      if (appEvent.kind === 'turn-end') setPhase('idle')     // the prompt is back
+      if (appEvent.kind === 'stream-delta') setPhase(appEvent.block === 'reasoning' ? 'thinking' : 'responding')
+      if (appEvent.kind === 'tool-call-card') setPhase('tools')
+      if (appEvent.kind === 'inbox-spliced') {
+        // Floor at zero: a splice can report removals this UI never counted.
+        queued = appEvent.cancelled ? 0 : Math.max(0, queued + appEvent.inserted - appEvent.removed)
+      }
+      metrics.apply(appEvent)
       transcript.apply(appEvent)
     }
     showCompaction()          // elapsed advances on the events that keep arriving
+    syncFooter()
     tui.requestRender()
   }))
 
   detachers.push(ctx.on('agent/status', (payload: { agent: unknown; status: 'idle' | 'running' }) => {
     if (payload.agent !== bound || disposed) return
     running = payload.status === 'running'
+    // Zero idle CPU (ruling 11): the one animation timer lives exactly as long
+    // as the turn does. A non-running transition also HARD-CLEARS the queued
+    // badge — an idle agent has nothing waiting behind it (spec §3.2).
+    composer.setAnimating(running)
+    if (!running) { queued = 0; setPhase('idle') }
+    else if (phase === 'idle') setPhase('wait')
     syncComposer()
+    syncFooter()
     tui.requestRender()
   }))
 
@@ -245,6 +301,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     running = next.status === 'running'
     pendingCalls.clear()
     compactingSince = undefined     // a rebind is never mid-compaction (ruling 7)
+    // A rebind is a new session: fresh metrics, and the workspace it chdir'd
+    // into, with its branch re-read once (spec §3.8).
+    metrics = new Metrics()
+    workspace = process.cwd()
+    branch = gitBranch(workspace)
+    queued = 0
+    setPhase(running ? 'wait' : 'idle')
     transcript = new Transcript(palette)
     transcriptSlot.clear()
     transcriptSlot.addChild(transcript.container)
@@ -252,9 +315,14 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // through the same translation live events take — so a resumed screen and
     // the screen that produced it are the same screen.
     for (const event of (next.session as { events?: readonly { type: string; data: unknown; time?: number }[] }).events ?? []) {
-      for (const appEvent of translateSessionEvent(event)) transcript.apply(appEvent)
+      for (const appEvent of translateSessionEvent(event)) {
+        metrics.apply(appEvent)      // replay-equivalent by construction (§5.2)
+        transcript.apply(appEvent)
+      }
     }
+    composer.setAnimating(running)
     syncComposer()
+    syncFooter()
     tui.requestRender()
   }
 
@@ -529,6 +597,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     disposed = true
     for (const detach of detachers.splice(0)) detach()
     for (const run of commandRuns) if (run !== executingRun) run.abort()
+    composer.dispose()          // the glyph timer never outlives the UI
     panels.disposeAll()
     tui.stop()
   }

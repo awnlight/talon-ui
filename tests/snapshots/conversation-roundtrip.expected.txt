@@ -1,6 +1,6 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @7,0
+cursor hidden @7,2
 0| "You"
   style 0-2 bold underline
 1| "Rename the button."
@@ -12,7 +12,11 @@ cursor hidden @7,0
 5| "Done — renamed."
 6| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-7| <blank>
+7| "❯"
+  style 0-0 dim
+  style 2-2 inverse
 8| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-9-17| <blank>
+9| "/workspace/talon-ui"
+  style 0-18 dim
+10-17| <blank>
