@@ -18,7 +18,7 @@ import { buildResumeCandidates, preflightResume, type PreflightServices, type Re
 import { translateSessionEvent } from '../backend/translate.js'
 import { displayText, type Palette, paletteTable } from '../theme/palette.js'
 import { Composer, type GlyphPhase } from '../ui/composer/composer.js'
-import { createSlashProvider } from '../ui/composer/slash-provider.js'
+import { createCompletionProvider, type FileReferenceLookup } from '../ui/composer/completion.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
@@ -96,6 +96,9 @@ export interface ControllerDeps {
      * composition without a model catalog still boots — `/model` then says so
      * instead of throwing. */
     llm: LlmCatalog
+    /** `@file` discovery (`ctx.fileReferences`). Absent in a composition
+     * without the row: `@` completion is then inert and nothing else changes. */
+    fileReferences?: { list(agent: unknown, query: string, signal: AbortSignal): Promise<readonly { path: string; kind: 'file' | 'directory' }[]> }
   }
   /** Installed once per bind so a pick takes effect on the NEXT step
    * (`installModelSelection`'s own contract). Absent in tests that do not
@@ -586,7 +589,17 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // Slash discovery: the provider reads the registry through this closure, so
   // it needs no rebuild when commands come and go (Ruling 4) — an already-open
   // menu just gets re-queried.
-  composer.attachSlashCompletion(createSlashProvider(() => deps.commands.list(bound)))
+  // One provider, three sources (T4 ruling 4): the command registry through a
+  // closure so `commands/change` needs no rebuild, and the file-reference
+  // service — when the composition has one — bound to the CURRENT agent, so a
+  // D8 rebind searches the workspace it moved to.
+  composer.attachCompletion(createCompletionProvider({
+    commands: () => deps.commands.list(bound),
+    files: () => {
+      const service = deps.services.fileReferences
+      return service === undefined ? undefined : (query, signal) => service.list(bound, query, signal)
+    },
+  }))
   detachers.push(ctx.on('commands/change', () => composer.refreshCompletion()))
 
   detachers.push(tui.addInputListener((data) => {

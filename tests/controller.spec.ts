@@ -520,6 +520,41 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('@file completion asks the composed service, bound to the CURRENT agent (spec §8 T4)', async () => {
+    const asked: { agent: unknown; query: string }[] = []
+    const { terminal, controller } = setup({
+      services: { fileReferences: {
+        list: async (agent: unknown, query: string) => {
+          asked.push({ agent, query })
+          return [{ path: 'src/app/controller.ts', kind: 'file' as const }]
+        },
+      } },
+    })
+    await terminal.waitForFrame(0)
+    for (const key of '@src') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('src/app/controller.ts'))
+    expect(asked.at(-1)!.query).toBe('src')
+    await controller.dispose()
+  })
+
+  it('@file is inert where no file-reference service is composed', async () => {
+    const { terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    for (const key of '@src') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(terminal.snapshot()).toContain('@src')          // typed text stands…
+    expect(terminal.snapshot()).not.toContain('controller.ts')  // …with no menu behind it
+    await controller.dispose()
+  })
+
   it('/model picks a route whose effect lands on the NEXT step (spec §3.7)', async () => {
     const selection: { current: { provider: string; model: string; reasoningEffort?: string } | undefined } = { current: { provider: 'deepseek', model: 'deepseek-chat' } }
     const svc = dispatchingCommandService()

@@ -21,6 +21,8 @@
       "@deepseek-ai/dsh-session-query": ["../deepseek-harness/packages/session-query/session-query/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-session-projection": ["../deepseek-harness/packages/session/session-projection/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-session-projection-cache": ["../deepseek-harness/packages/session/session-projection-cache/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-file-reference/grammar": ["../deepseek-harness/packages/context/file-reference/lib/types/grammar.d.ts"],
+      "@deepseek-ai/dsh-file-reference": ["../deepseek-harness/packages/context/file-reference/lib/types/index.d.ts"],
       "@deepseek-ai/dsh-llm": ["../deepseek-harness/packages/llm/llm/src"],
       "@deepseek-ai/dsh-token-meter": ["../deepseek-harness/packages/llm/token-meter/src"]
     }

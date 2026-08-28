@@ -9,6 +9,7 @@ export default defineConfig({
       '@deepseek-ai/dsh-session': fileURLToPath(new URL('../deepseek-harness/packages/core/session', import.meta.url)),
       '@deepseek-ai/dsh-user-questions': fileURLToPath(new URL('../deepseek-harness/packages/interaction/user-questions', import.meta.url)),
       '@deepseek-ai/dsh-commands': fileURLToPath(new URL('../deepseek-harness/packages/interaction/commands', import.meta.url)),
+      '@deepseek-ai/dsh-file-reference/grammar': fileURLToPath(new URL('../deepseek-harness/packages/context/file-reference/src/grammar.ts', import.meta.url)),
     },
   },
   test: {

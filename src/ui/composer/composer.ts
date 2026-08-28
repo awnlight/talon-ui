@@ -72,7 +72,7 @@ export class Composer {
         selectedText: (s) => palette.selected(s),
         description: (s) => palette.dim(s),
         scrollInfo: (s) => palette.dim(s),
-        /* v8 ignore next -- unreachable behind createSlashProvider: noMatch renders only for an EMPTY item list — the provider answers null instead, which closes the menu before any row renders (editor.js:1897-1900) */
+        /* v8 ignore next -- unreachable behind createCompletionProvider: noMatch renders only for an EMPTY item list — the provider answers null instead, which closes the menu before any row renders (editor.js:1897-1900) */
         noMatch: (s) => palette.dim(s),
       },
     }, { paddingX: 0 })
@@ -158,10 +158,10 @@ export class Composer {
    * agent/status transition issues one — restores the dim contract. */
   flashHint(text: string, tone: 'warning'): void { this.hint.setText(this.palette[tone](text)) }
 
-  /** Wire slash-command completion (spec §3.5 discovery). pi-tui asks the
-   * provider on every keystroke, so a closure-backed one always offers the
-   * command list as it stands right now. */
-  attachSlashCompletion(provider: AutocompleteProvider): void { this.editor.setAutocompleteProvider(provider) }
+  /** Wire the ONE completion provider (spec §3.5 discovery). pi-tui asks it on
+   * every keystroke, so a closure-backed provider always offers the sources as
+   * they stand right now. */
+  attachCompletion(provider: AutocompleteProvider): void { this.editor.setAutocompleteProvider(provider) }
 
   /** Re-query a menu that is ALREADY open — what a `commands/change` arriving
    * under a visible menu needs (the provider itself needs no rebuild). Not the
