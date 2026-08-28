@@ -277,3 +277,35 @@ describe('session/title (spec §8 T4)', () => {
     expect(translateSessionEvent({ type: 'session/title', data: {} })).toEqual([{ kind: 'session-title', title: '' }])
   })
 })
+
+describe('the durable workflow record (spec §3.9)', () => {
+  it('maps all four events, and narrows an unknown settlement to a terminal one', () => {
+    expect(translateSessionEvent({ type: 'tool-workflow/run-start', data: { runId: 'r1', name: 'review-changes' } }))
+      .toEqual([{ kind: 'workflow-run-start', runId: 'r1', name: 'review-changes' }])
+    expect(translateSessionEvent({ type: 'tool-workflow/agent-start', data: { runId: 'r1', seq: 2, label: 'review:bugs', phase: 'Review', childId: 'c' } }))
+      .toEqual([{ kind: 'workflow-agent-start', runId: 'r1', seq: 2, label: 'review:bugs', phase: 'Review' }])
+    expect(translateSessionEvent({ type: 'tool-workflow/agent-start', data: { runId: 'r1', seq: 3, label: 'x' } })[0])
+      .toMatchObject({ phase: undefined })
+    for (const [outcome, expected] of [['completed', 'completed'], ['cancelled', 'cancelled'], ['failed', 'failed'], ['who-knows', 'failed']]) {
+      expect(translateSessionEvent({ type: 'tool-workflow/agent-end', data: { runId: 'r1', seq: 1, outcome } })[0])
+        .toMatchObject({ kind: 'workflow-agent-end', outcome: expected })
+    }
+    for (const [reason, expected] of [['completed', 'completed'], ['cancelled', 'cancelled'], ['error', 'error'], ['exploded', 'error']]) {
+      expect(translateSessionEvent({ type: 'tool-workflow/run-end', data: { runId: 'r1', stopReason: reason } })[0])
+        .toMatchObject({ kind: 'workflow-run-end', stopReason: expected })
+    }
+  })
+
+  it('reads a record missing its fields as an empty, zeroed one rather than throwing', () => {
+    // A truncated or hand-edited log must still translate: the card then shows
+    // an unnamed run rather than taking the frame down.
+    expect(translateSessionEvent({ type: 'tool-workflow/run-start', data: {} }))
+      .toEqual([{ kind: 'workflow-run-start', runId: '', name: '' }])
+    expect(translateSessionEvent({ type: 'tool-workflow/agent-start', data: {} }))
+      .toEqual([{ kind: 'workflow-agent-start', runId: '', seq: 0, label: '', phase: undefined }])
+    expect(translateSessionEvent({ type: 'tool-workflow/agent-end', data: {} }))
+      .toEqual([{ kind: 'workflow-agent-end', runId: '', seq: 0, outcome: 'failed' }])
+    expect(translateSessionEvent({ type: 'tool-workflow/run-end', data: {} }))
+      .toEqual([{ kind: 'workflow-run-end', runId: '', stopReason: 'error' }])
+  })
+})

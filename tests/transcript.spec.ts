@@ -539,3 +539,66 @@ describe('Transcript retry withdrawal (spec §4.1/§5.3, ruling 8)', () => {
     expect(rows(t).filter((row) => row.includes('talon')).length).toBe(1)
   })
 })
+
+describe('Transcript workflow cards (spec §3.9)', () => {
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+  const rows = (t: Transcript): string[] => t.container.render(80)
+
+  it('opens a card per run and mutates it in place through the record', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'workflow-run-start', runId: 'r1', name: 'review-changes' })
+    t.apply({ kind: 'workflow-agent-start', runId: 'r1', seq: 1, label: 'review:bugs', phase: 'Review' })
+    t.apply({ kind: 'workflow-agent-end', runId: 'r1', seq: 1, outcome: 'completed' })
+    t.apply({ kind: 'workflow-run-end', runId: 'r1', stopReason: 'completed' })
+    expect(rows(t)).toEqual([
+      '◆ workflow · review-changes',
+      '  ◆ review:bugs · Review · completed',
+      '└ 1 member · completed',
+    ])
+    expect(accounted(t)).toBe(rows(t).length)
+  })
+
+  it('keeps two concurrent runs apart', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'workflow-run-start', runId: 'r1', name: 'first' })
+    t.apply({ kind: 'workflow-run-start', runId: 'r2', name: 'second' })
+    t.apply({ kind: 'workflow-agent-start', runId: 'r2', seq: 1, label: 'only in second', phase: undefined })
+    const out = rows(t).join('\n')
+    expect(out).toContain('◇ workflow · first')
+    expect(out).toContain('only in second')
+    expect(rows(t).filter((row) => row.includes('only in second'))).toHaveLength(1)
+    expect(accounted(t)).toBe(rows(t).length)
+  })
+
+  it('drops a record whose run-start never landed — the run is not on screen either', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'workflow-agent-start', runId: 'gone', seq: 1, label: 'x', phase: undefined })
+    t.apply({ kind: 'workflow-agent-end', runId: 'gone', seq: 1, outcome: 'completed' })
+    t.apply({ kind: 'workflow-run-end', runId: 'gone', stopReason: 'completed' })
+    expect(rows(t)).toEqual([])
+    expect(accounted(t)).toBe(0)
+  })
+
+  it('forgets a card the mount cap evicted, so a later record cannot resurrect it', () => {
+    const t = new Transcript(p, { mountCapLines: 10 })
+    t.apply({ kind: 'workflow-run-start', runId: 'r1', name: 'review' })
+    for (let i = 0; i < 8; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })
+    expect(rows(t).join('\n')).not.toContain('review')
+    t.apply({ kind: 'workflow-agent-start', runId: 'r1', seq: 1, label: 'late', phase: undefined })
+    expect(rows(t).join('\n')).not.toContain('late')
+    expect(accounted(t)).toBeLessThanOrEqual(12)
+  })
+
+  it('renders identically live and on replay', () => {
+    const events: AppEvent[] = [
+      { kind: 'workflow-run-start', runId: 'r1', name: 'review' },
+      { kind: 'workflow-agent-start', runId: 'r1', seq: 1, label: 'a', phase: undefined },
+      { kind: 'workflow-run-end', runId: 'r1', stopReason: 'cancelled' },
+    ]
+    const live = new Transcript(p)
+    const replay = new Transcript(p)
+    for (const event of events) live.apply(event)
+    for (const event of events) replay.apply(event)
+    expect(live.container.render(80)).toEqual(replay.container.render(80))
+  })
+})

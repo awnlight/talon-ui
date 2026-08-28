@@ -8,7 +8,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion', 'agents-panel'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion', 'agents-panel', 'card-workflow'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -683,6 +683,28 @@ describe('talon snapshots', () => {
     const after = terminal.frames
     terminal.input('\x1b')
     await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('card-workflow', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The durable record, in the order a real run writes it: one run still in
+    // flight beneath one that already settled, so both tones are on screen.
+    send('user/message', { content: [{ type: 'text', text: 'Review the branch.' }], source: { kind: 'user' } })
+    send('tool-workflow/run-start', { runId: 'r1', name: 'review-changes' })
+    send('tool-workflow/agent-start', { runId: 'r1', seq: 1, label: 'review:bugs', phase: 'Review', childId: 'c1' })
+    send('tool-workflow/agent-start', { runId: 'r1', seq: 2, label: 'review:perf', phase: 'Review', childId: 'c2' })
+    send('tool-workflow/agent-end', { runId: 'r1', seq: 1, outcome: 'completed' })
+    send('tool-workflow/agent-end', { runId: 'r1', seq: 2, outcome: 'failed' })
+    send('tool-workflow/run-end', { runId: 'r1', stopReason: 'completed' })
+    send('tool-workflow/run-start', { runId: 'r2', name: 'verify-findings' })
+    send('tool-workflow/agent-start', { runId: 'r2', seq: 1, label: 'verify:a', phase: 'Verify', childId: 'c3' })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-workflow', terminal)
+
     await controller.dispose()
   })
 

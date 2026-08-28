@@ -28,6 +28,7 @@ export const CHECKPOINTS = [
   'model-selector',
   'at-completion',
   'agents-panel',
+  'card-workflow',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]
