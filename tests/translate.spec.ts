@@ -269,3 +269,11 @@ describe('footer metrics events (spec §3.8/§3.2)', () => {
       .toEqual([{ kind: 'inbox-spliced', inserted: 0, removed: 3, cancelled: true }])
   })
 })
+
+describe('session/title (spec §8 T4)', () => {
+  it('carries the title, and reads a title-free event as empty', () => {
+    expect(translateSessionEvent({ type: 'session/title', data: { title: 'Fix the login flow', messageSeqs: [], source: { kind: 'llm' } } }))
+      .toEqual([{ kind: 'session-title', title: 'Fix the login flow' }])
+    expect(translateSessionEvent({ type: 'session/title', data: {} })).toEqual([{ kind: 'session-title', title: '' }])
+  })
+})

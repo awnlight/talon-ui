@@ -520,6 +520,29 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('sets the window title from session/title, sanitized, and restores it on dispose (spec §8 T4)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    expect(terminal.snapshot()).toContain('title "talon"')
+
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'session/title', data: { title: 'Fix the\nlogin \x1b]0;evil\x07flow', messageSeqs: [], source: { kind: 'llm' } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('title "Fix the login \\x1b]0;evil\\x07flow"')
+    // A title is a terminal side effect, never a rendered row: it appears in
+    // the snapshot's header and in no numbered row.
+    expect(terminal.snapshot()).not.toMatch(/^\d+\| ".*Fix the login/m)
+
+    // A rebind belongs to a new session, which names itself on its own title.
+    before = terminal.frames
+    controller.bindAgent(fakeAgent('s2') as never)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('title "talon"')
+
+    await controller.dispose()
+    expect(terminal.snapshot()).toContain('title "talon"')
+  })
+
   it('@file completion asks the composed service, bound to the CURRENT agent (spec §8 T4)', async () => {
     const asked: { agent: unknown; query: string }[] = []
     const { terminal, controller } = setup({

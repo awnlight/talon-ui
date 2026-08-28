@@ -1,5 +1,6 @@
 terminal 100x34 buffer=normal length=230 base=196 viewport=196
 lifecycle started=1 stopped=0 progress=inactive
+title "Hi"
 cursor hidden @31,2
 0| "/permission danger-full-access"
   style 0-29 dim

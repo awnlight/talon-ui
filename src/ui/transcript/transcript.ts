@@ -135,7 +135,8 @@ export class Transcript {
         { const c = new NoticeCell({ text: COMPACTION_MARKER, tone: 'info' }, this.palette); this.appendCell(c, c.contentLineCount()) }
         break
       case 'compaction-live':
-        break            // controller-owned live state (ruling 7): never a cell
+      case 'session-title':
+        break            // controller-owned live state: never a cell
       case 'retry-notice': {
         // The request failed, so the text it had begun to deliver never
         // happened: withdraw it, then say why (spec §4.1).

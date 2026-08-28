@@ -25,6 +25,9 @@ export type AppEvent =
   | { kind: 'request-context'; model: string; contextWindow: number | undefined }
   // The queued badge (spec §3.2): what the inbox spliced in or took away.
   | { kind: 'inbox-spliced'; inserted: number; removed: number; cancelled: boolean }
+  // The window title (spec §8 T4). Consumed by the controller ALONE — a title
+  // is a side effect on the terminal, never a transcript cell.
+  | { kind: 'session-title'; title: string }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }

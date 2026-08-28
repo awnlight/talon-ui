@@ -1,5 +1,6 @@
 terminal 72x24 buffer=normal length=24 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
+title "talon"
 cursor hidden @15,0
 0| <blank>
 1| "─ plan review ──────────────────────────────────────────────────────────"

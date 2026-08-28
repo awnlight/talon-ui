@@ -147,6 +147,8 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
         delayMs: d.delayMs,
         message: String((d.failure as { message?: unknown } | undefined)?.message ?? ''),
       }]
+    case 'session/title':
+      return [{ kind: 'session-title', title: String(d.title ?? '') }]
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':

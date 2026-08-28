@@ -24,6 +24,7 @@ import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
+import { TerminalTitle } from '../ui/terminal-title.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
@@ -206,6 +207,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       tui.requestRender()
     },
   })
+  // The window title (spec §8 T4): live state, written through the Terminal
+  // seam rather than rendered, and put back on teardown.
+  const title = new TerminalTitle(terminal)
+  title.reset()
   const hasPanel = (): boolean => panels.active !== undefined
   // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
   // end, and never reconstructed from replayed history.
@@ -259,6 +264,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       }
       // The glyph reads the SAME live stream the transcript does (spec §4.3):
       // waiting on the model, thinking, answering, or running a tool.
+      if (appEvent.kind === 'session-title') title.set(appEvent.title)
       if (appEvent.kind === 'step-start') setPhase('wait')
       if (appEvent.kind === 'turn-end') setPhase('idle')     // the prompt is back
       if (appEvent.kind === 'stream-delta') setPhase(appEvent.block === 'reasoning' ? 'thinking' : 'responding')
@@ -320,6 +326,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // into, with its branch re-read once (spec §3.8).
     metrics = new Metrics()
     sessionChoices = undefined      // a rebind can add or remove sessions
+    title.reset()                   // the new session names itself on its own session/title
     workspace = process.cwd()
     branch = gitBranch(workspace)
     queued = 0
@@ -669,6 +676,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     for (const detach of detachers.splice(0)) detach()
     for (const run of commandRuns) if (run !== executingRun) run.abort()
     composer.dispose()          // the glyph timer never outlives the UI
+    title.reset()               // a reused terminal must not keep advertising a session that ended
     panels.disposeAll()
     tui.stop()
   }
