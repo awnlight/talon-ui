@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -360,6 +360,83 @@ describe('talon snapshots', () => {
     ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'wrote src/notes.md' }] }] }, meta: { diffs: [] } } })
     await terminal.waitForFrame(before)
     await checkpoint('card-diff', terminal)
+
+    await controller.dispose()
+  })
+
+  /** The card checkpoints below share one harness: a controller bound to an
+   * event-emitting ctx, driven purely by durable session events. */
+  const cardHarness = (rows: number) => {
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, rows)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    const send = (type: string, data: unknown) => ctx.emit('session/event', agent.session, { type, data })
+    return { terminal, controller, send }
+  }
+
+  it('card-read', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The numbered window `read` persists as meta, highlighted through
+    // meta.lang — ANSI-16 roles only, which the checkpoint's theme gate proves.
+    send('user/message', { content: [{ type: 'text', text: 'Show me the flag.' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"src/flags.ts","offset":9}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '9\tconst flags = {' }] }] },
+      meta: {
+        path: 'src/flags.ts', offset: 9, totalLines: 120, lang: 'typescript',
+        lines: [
+          { number: 9, text: '// the feature flags' },
+          { number: 10, text: 'export const flags = {' },
+          { number: 11, text: '  modern: true,' },
+          { number: 12, text: '}' },
+        ],
+      },
+    })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-read', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-search', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // grep's by-file groups and glob's flat list, both carrying the pre-cap
+    // `total` — the grep result is capped, so its card says so.
+    send('user/message', { content: [{ type: 'text', text: 'Where is the flag used?' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'grep', arguments: '{"pattern":"modern","path":"src"}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'src/flags.ts:10:  modern: true,' }] }] },
+      meta: {
+        shape: 'matches', truncated: true, total: 42,
+        files: [
+          { path: 'src/flags.ts', matches: [{ lineNumber: 10, line: '  modern: true,' }] },
+          { path: 'src/app.ts', matches: [{ lineNumber: 3, line: 'if (flags.modern) {' }] },
+        ],
+      },
+    })
+    send('tool/call', { turn: 1, step: 2, callId: 'c2', name: 'glob', arguments: '{"pattern":"src/**/*.test.ts"}' })
+    send('tool/result', {
+      turn: 1, step: 2,
+      message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'src/flags.test.ts' }] }] },
+      meta: { shape: 'paths', truncated: false, total: 2, paths: ['src/flags.test.ts', 'src/app.test.ts'] },
+    })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-search', terminal)
 
     await controller.dispose()
   })

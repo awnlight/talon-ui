@@ -216,7 +216,9 @@ Body per spec §4.2: `$ <command>` + cwd prefix line (workdir arg or bound cwd; 
 
 read: head `<path>:<offset>`; body = line-number column source excerpt from `meta.lines` (≤6 fold), `meta.lang` feeds `highlightToAnsi`; `└ <totalLines> lines` tail. `read_image`: generic-ish single line (`image · <path>`) — no pixels in a terminal card (T4 owns images). search: grep groups matches by `path` — `path` line then indented `  L42: match text` rows; glob (`paths` shape) lists paths; `truncated/total` footnote when the result reports truncation.
 
-- [ ] Steps: failing tests (offset math in the number column; lang-highlighted excerpt stays ANSI-16; grouping; glob; fold) → implement → checkpoints → gate. Commit: `feat: read + search cards — numbered excerpts with highlight, grouped matches (D12)`
+**Crib delta, verified 2026-08-28:** `read`'s meta matches the crib (`{path, offset, lines:[{number,text}], totalLines, lang?}` — the numbers are the file's own, so no offset math is needed: the column prints `line.number`). The SEARCH crib (`grep result {matches:[{path,…}]}`, `glob result {root; paths}`) is again the execution-local `value`; the durable meta is the `SearchMeta` projection (fs-search/src/presentation.ts): `{shape:'matches', files:[{path, matches:[{lineNumber,line}]}], truncated, total}` and `{shape:'paths', paths, truncated, total}`, each carrying the **pre-cap** `total`, which the card's tail reports so a capped search never reads as complete. `read_image` publishes no meta at all, so rather than inventing an `image · <path>` line that would only repeat the head, it falls through to the model-facing text — the no-pixels rule holds either way, with no special case.
+
+- [x] Steps: failing tests (offset math in the number column; lang-highlighted excerpt stays ANSI-16; grouping; glob; fold) → implement → checkpoints → gate. Commit: `feat: read + search cards — numbered excerpts with highlight, grouped matches (D12)`
 
 ### Task 9: web + generic cards
 

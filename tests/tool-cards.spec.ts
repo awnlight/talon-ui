@@ -360,3 +360,171 @@ describe('diff card (edit/write/str_replace_editor, spec §4.2 / D12)', () => {
     expect(cell.render(80)).toContain('… 7 more lines …')
   })
 })
+
+/** `read` persists its numbered window as meta (`{path, offset, lines,
+ * totalLines, lang?}`); `grep`/`glob` persist the capped structured result
+ * (`{shape, …, truncated, total}`). Both narrow defensively: a replayed log
+ * that predates the projection falls back to the plain result text. */
+describe('read card (spec §4.2 / D12)', () => {
+  const readMeta = (over: Record<string, unknown> = {}): ToolResult => ({
+    isError: false, errorCode: undefined, resultText: 'read src/a.ts',
+    meta: { path: 'src/a.ts', offset: 41, totalLines: 120, lang: 'typescript', lines: [
+      { number: 41, text: 'const flag = true' },
+      { number: 42, text: '// keep' },
+    ], ...over },
+  })
+
+  it('heads on path:offset, and on the bare path when no offset was asked for', () => {
+    expect(card('read', { file_path: 'src/a.ts', offset: 41 }).render(80)[0]).toBe('◇ read · src/a.ts:41')
+    expect(card('read', { file_path: 'src/a.ts' }).render(80)[0]).toBe('◇ read · src/a.ts')
+    expect(card('read', { file_path: 'src/a.ts', offset: 'x' }).render(80)[0]).toBe('◇ read · src/a.ts')
+    expect(card('read', {}).render(80)[0]).toBe('◇ read')
+  })
+
+  it('renders the numbered excerpt from meta with a total-lines tail', () => {
+    const cell = card('read', { file_path: 'src/a.ts', offset: 41 })
+    cell.settle(readMeta())
+    expect(cell.render(80)).toEqual([
+      '◆ read · src/a.ts:41',
+      '  41 const flag = true',
+      '  42 // keep',
+      '└ 120 lines',
+    ])
+  })
+
+  it('feeds meta.lang to the highlighter, in palette roles only', () => {
+    const cell = card('read', { file_path: 'src/a.ts' }, colored)
+    cell.settle(readMeta())
+    const rows = cell.render(80)
+    expect(rows[1]).toContain(colored.code('const'))                    // keyword → code role (ruling 13)
+    expect(rows[2]).toContain(colored.dim('// keep'))                   // comment → dim
+    expect(rows.join('')).not.toMatch(/\x1b\[38;2/)                     // never truecolor
+  })
+
+  it('renders an unknown language as plain code and an empty window as the tail alone', () => {
+    const plain = card('read', { file_path: 'a.txt' })
+    plain.settle(readMeta({ lang: undefined, lines: [{ number: 1, text: 'hello' }] }))
+    expect(plain.render(80)).toEqual(['◆ read · a.txt', '  1 hello', '└ 120 lines'])
+
+    const empty = card('read', { file_path: 'a.txt' })
+    empty.settle(readMeta({ lines: [], totalLines: 0 }))
+    expect(empty.render(80)).toEqual(['◆ read · a.txt', '└ 0 lines'])
+  })
+
+  it('falls back to the result text when there is no window to render', () => {
+    const image = card('read_image', { file_path: 'shot.png' })       // read_image publishes no meta: no pixels in a card
+    image.settle(ok('read image shot.png (1024x768)'))
+    expect(image.render(80)).toEqual(['◆ read_image · shot.png', 'read image shot.png (1024x768)'])
+
+    for (const meta of [{ path: 'a.ts', offset: 1, totalLines: 2, lines: 'nope' },
+      { path: 'a.ts', offset: 1, totalLines: 2, lines: [null] },
+      { path: 'a.ts', offset: 1, totalLines: 2, lines: [['1', 'x']] },
+      { path: 'a.ts', offset: 1, totalLines: 2, lines: [{ number: '1', text: 'x' }] },
+      { path: 'a.ts', offset: '1', totalLines: 2, lines: [] },
+      [], null, 'meta', undefined]) {
+      const malformed = card('read', { file_path: 'a.ts' })
+      malformed.settle({ isError: false, errorCode: undefined, resultText: 'contents', meta })
+      expect(malformed.render(80)).toEqual(['◆ read · a.ts', 'contents'])
+    }
+
+    const broken = card('read', { file_path: 'a.ts' }, colored)
+    broken.settle(failed('ENOENT'))
+    expect(broken.render(80)).toEqual([colored.error('◆ read · a.ts'), colored.dim('ENOENT')])
+  })
+
+  it('right-aligns the number column and neutralizes hostile source text', () => {
+    const cell = card('read', { file_path: 'a.ts' })
+    cell.settle(readMeta({ lang: undefined, lines: [{ number: 9, text: 'a\x1b]0;evil\x07' }, { number: 10, text: 'b' }] }))
+    expect(cell.render(80)[1]).toBe('   9 a\\x1b]0;evil\\x07')
+    expect(cell.render(80)[2]).toBe('  10 b')
+  })
+})
+
+describe('search card (grep/glob, spec §4.2 / D12)', () => {
+  const matches = (over: Record<string, unknown> = {}): ToolResult => ({
+    isError: false, errorCode: undefined, resultText: 'raw grep text',
+    meta: { shape: 'matches', truncated: false, total: 3, files: [
+      { path: 'src/a.ts', matches: [{ lineNumber: 42, line: 'const TODO = 1' }, { lineNumber: 57, line: '// TODO later' }] },
+      { path: 'src/b.ts', matches: [{ lineNumber: 3, line: 'TODO' }] },
+    ], ...over },
+  })
+  const paths = (over: Record<string, unknown> = {}): ToolResult => ({
+    isError: false, errorCode: undefined, resultText: 'raw glob text',
+    meta: { shape: 'paths', truncated: false, total: 2, paths: ['src/a.ts', 'src/b.ts'], ...over },
+  })
+
+  it('heads on the pattern', () => {
+    expect(card('grep', { pattern: 'TODO', path: 'src' }).render(80)[0]).toBe('◇ grep · TODO')
+    expect(card('glob', { pattern: '**/*.ts' }).render(80)[0]).toBe('◇ glob · **/*.ts')
+    expect(card('grep', {}).render(80)[0]).toBe('◇ grep')
+  })
+
+  it('groups matches under a bold path with indented line rows', () => {
+    const cell = card('grep', { pattern: 'TODO' }, colored)
+    cell.settle(matches())
+    expect(cell.render(80)).toEqual([
+      colored.success('◆ grep · TODO'),
+      colored.bold('src/a.ts'),
+      colored.dim('  L42: const TODO = 1'),
+      colored.dim('  L57: // TODO later'),
+      colored.bold('src/b.ts'),
+      colored.dim('  L3: TODO'),
+      colored.dim('└ 3 matches'),
+    ])
+  })
+
+  it('lists glob paths flat, and counts a single result in the singular', () => {
+    const cell = card('glob', { pattern: '**/*.ts' })
+    cell.settle(paths())
+    expect(cell.render(80)).toEqual(['◆ glob · **/*.ts', 'src/a.ts', 'src/b.ts', '└ 2 paths'])
+
+    const one = card('glob', { pattern: 'a.ts' })
+    one.settle(paths({ total: 1, paths: ['a.ts'] }))
+    expect(one.render(80).at(-1)).toBe('└ 1 path')
+
+    const single = card('grep', { pattern: 'x' })
+    single.settle(matches({ total: 1, files: [{ path: 'a.ts', matches: [{ lineNumber: 1, line: 'x' }] }] }))
+    expect(single.render(80).at(-1)).toBe('└ 1 match')
+  })
+
+  it('says so when the search was capped', () => {
+    const cell = card('grep', { pattern: 'x' })
+    cell.settle(matches({ truncated: true, total: 250 }))
+    expect(cell.render(80).at(-1)).toBe('└ 250 matches · truncated')
+  })
+
+  it('renders a zero-result search as a legitimate empty card', () => {
+    const cell = card('grep', { pattern: 'nothing' })
+    cell.settle(matches({ total: 0, files: [] }))
+    expect(cell.render(80)).toEqual(['◆ grep · nothing', '└ 0 matches'])
+  })
+
+  it('falls back to the raw result text on malformed or absent metadata', () => {
+    for (const meta of [undefined, { shape: 'matches', truncated: false }, { shape: 'other', truncated: false, total: 0 },
+      { shape: 'matches', truncated: false, total: 1, files: [{ path: 1, matches: [] }] },
+      { shape: 'matches', truncated: false, total: 1, files: [{ path: 'a', matches: [{ lineNumber: 'x', line: 'y' }] }] },
+      { shape: 'matches', truncated: false, total: 1, files: [{ path: 'a', matches: [null] }] },
+      { shape: 'matches', truncated: false, total: 1, files: 'x' },
+      { shape: 'matches', truncated: false, total: 1, files: [null] },
+      { shape: 'paths', truncated: false, total: 1, paths: [2] },
+      { shape: 'paths', truncated: false, total: 1, paths: 'x' },
+      { shape: 'paths', truncated: 'no', total: 1, paths: [] },
+      [], null, 'meta']) {
+      const cell = card('grep', { pattern: 'x' })
+      cell.settle({ isError: false, errorCode: undefined, resultText: 'raw', meta })
+      expect(cell.render(80)).toEqual(['◆ grep · x', 'raw'])
+    }
+    const broken = card('glob', { pattern: 'x' }, colored)
+    broken.settle(failed('rg missing'))
+    expect(broken.render(80)).toEqual([colored.error('◆ glob · x'), colored.dim('rg missing')])
+  })
+
+  it('keeps every match row a single logical line and neutralizes controls', () => {
+    const cell = card('grep', { pattern: 'x' })
+    cell.settle(matches({ total: 1, files: [{ path: 'a\x1b[2J.ts', matches: [{ lineNumber: 1, line: 'hit\x1b]0;evil\x07\nsecond' }] }] }))
+    const rows = cell.render(120)
+    expect(rows[1]).toBe('a\\x1b[2J.ts')
+    expect(rows[2]).toBe('  L1: hit\\x1b]0;evil\\x07')
+    expect(cell.contentLineCount()).toBe(4)
+  })
+})

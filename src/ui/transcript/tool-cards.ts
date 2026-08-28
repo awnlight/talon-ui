@@ -15,6 +15,7 @@ import { homedir } from 'node:os'
 import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { displayText, type Palette } from '../../theme/palette.js'
 import { wrapPlain } from './cells.js'
+import { highlightToAnsi } from '../../theme/highlight.js'
 import { diffsFromMeta, renderFileDiffs, type FileDiff } from './diff-render.js'
 
 export type ToolCardClass = 'terminal' | 'diff' | 'read' | 'search' | 'web' | 'generic'
@@ -178,11 +179,115 @@ const diffBody: ToolBodyBuilder = (call, result, palette) => {
   return { lines: renderFileDiffs(diffs, palette, diffPath(call.args)) }
 }
 
+// ── read (read, read_image) ─────────────────────────────────────────────────
+// `read` persists its numbered window as meta (read-render.ts:212); nothing
+// else in the class does — `read_image` publishes none, and no terminal card
+// renders pixels anyway (T4 owns images) — so that one falls through to the
+// model-facing text, which already says what was read.
+
+interface ReadLine { number: number; text: string }
+interface ReadMeta { path: string; offset: number; lines: ReadLine[]; totalLines: number; lang?: string }
+
+function readMetaFrom(meta: unknown): ReadMeta | undefined {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
+  const { path, offset, lines, totalLines, lang } = meta as Record<string, unknown>
+  if (typeof path !== 'string' || typeof offset !== 'number' || typeof totalLines !== 'number') return undefined
+  if (!Array.isArray(lines) || !lines.every(isReadLine)) return undefined
+  return { path, offset, lines, totalLines, ...typeof lang === 'string' ? { lang } : {} }
+}
+
+function isReadLine(value: unknown): value is ReadLine {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const { number, text } = value as Record<string, unknown>
+  return typeof number === 'number' && typeof text === 'string'
+}
+
+const readHead: ToolHeadBuilder = ({ args }) => {
+  const path = stringArg(args, 'file_path')
+  if (path === undefined) return {}
+  const offset = (args as { offset?: unknown }).offset
+  return { key: typeof offset === 'number' ? `${path}:${offset}` : path }
+}
+
+const readBody: ToolBodyBuilder = (call, result, palette) => {
+  if (result.isError) return plainResultBody(call, result, palette)
+  const meta = readMetaFrom(result.meta)
+  if (meta === undefined) return plainResultBody(call, result, palette)
+  const tail = palette.dim(`└ ${meta.totalLines} lines`)
+  if (meta.lines.length === 0) return { lines: [tail] }
+  // The excerpt is highlighted as ONE block so the grammar sees real context,
+  // then re-split: the engine promises 1:1 lines, and oneLine() guarantees the
+  // input side of that promise even for a hand-edited log.
+  const source = meta.lines.map((line) => oneLine(line.text))
+  const highlighted = highlightToAnsi(source.join('\n'), meta.lang, palette)
+  const numWidth = String(Math.max(...meta.lines.map((line) => line.number))).length
+  return {
+    lines: [
+      ...meta.lines.map((line, i) => `${BODY_INDENT}${palette.dim(String(line.number).padStart(numWidth))} ${highlighted[i]!}`),
+      tail,
+    ],
+  }
+}
+
+// ── search (grep, glob) ─────────────────────────────────────────────────────
+// Both tools project one capped, structured payload (presentation.ts): grep's
+// matches grouped by file, glob's flat path list, each with the pre-cap `total`
+// and a `truncated` flag so a card never presents a capped result as complete.
+
+type SearchMeta =
+  | { shape: 'matches'; files: { path: string; matches: { lineNumber: number; line: string }[] }[]; truncated: boolean; total: number }
+  | { shape: 'paths'; paths: string[]; truncated: boolean; total: number }
+
+function searchMetaFrom(meta: unknown): SearchMeta | undefined {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
+  const { shape, files, paths, truncated, total } = meta as Record<string, unknown>
+  if (typeof truncated !== 'boolean' || typeof total !== 'number') return undefined
+  if (shape === 'matches') {
+    return Array.isArray(files) && files.every(isFileMatches) ? { shape, files, truncated, total } : undefined
+  }
+  if (shape === 'paths') {
+    return Array.isArray(paths) && paths.every((path) => typeof path === 'string') ? { shape, paths, truncated, total } : undefined
+  }
+  return undefined
+}
+
+function isFileMatches(value: unknown): value is { path: string; matches: { lineNumber: number; line: string }[] } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const { path, matches } = value as Record<string, unknown>
+  return typeof path === 'string' && Array.isArray(matches) && matches.every(isLineMatch)
+}
+
+function isLineMatch(value: unknown): value is { lineNumber: number; line: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const { lineNumber, line } = value as Record<string, unknown>
+  return typeof lineNumber === 'number' && typeof line === 'string'
+}
+
+const searchHead: ToolHeadBuilder = ({ args }) => ({ key: stringArg(args, 'pattern') })
+
+function counted(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`
+}
+
+const searchBody: ToolBodyBuilder = (call, result, palette) => {
+  if (result.isError) return plainResultBody(call, result, palette)
+  const meta = searchMetaFrom(result.meta)
+  if (meta === undefined) return plainResultBody(call, result, palette)
+  const lines = meta.shape === 'matches'
+    ? meta.files.flatMap((file) => [
+        palette.bold(oneLine(file.path)),
+        ...file.matches.map((match) => palette.dim(`${BODY_INDENT}L${match.lineNumber}: ${oneLine(match.line)}`)),
+      ])
+    : meta.paths.map((path) => palette.dim(oneLine(path)))
+  const summary = meta.shape === 'matches' ? counted(meta.total, 'match', 'matches') : counted(meta.total, 'path', 'paths')
+  return { lines: [...lines, palette.dim(`└ ${summary}${meta.truncated ? ' · truncated' : ''}`)] }
+}
+
 export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHeadBuilder> = {
   terminal: terminalHead,
   diff: diffHead,
-  read: defaultHead,
-  search: defaultHead,
+  read: readHead,
+  search: searchHead,
   web: defaultHead,
   generic: defaultHead,
   unregistered: defaultHead,
@@ -191,13 +296,14 @@ export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHead
 export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBodyBuilder> = {
   terminal: terminalBody,
   diff: diffBody,
-  read: plainResultBody,
-  search: plainResultBody,
+  read: readBody,
+  search: searchBody,
   web: plainResultBody,
   generic: plainResultBody,
   unregistered: plainResultBody,
 }
 
+const BODY_INDENT = '  '
 const PENDING_GLYPH = '◇'
 const SETTLED_GLYPH = '◆'
 const RUNNING_BODY = '└ running…'
