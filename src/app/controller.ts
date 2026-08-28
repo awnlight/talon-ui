@@ -64,8 +64,12 @@ export interface ControllerDeps {
   terminal: Terminal
   palette: Palette
   /** Minimal facet of dsh's `ctx.userQuestions` (spec §3.4) — just enough for
-   * `attachQuestionProvider` to register the one active UI provider. */
-  userQuestions: { registerProvider(p: { ask(req: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> }): () => void }
+   * Questions arrive on the SAME Cordis waterfall approvals use (dsh
+   * 0.1.2-alpha.1 replaced the single-provider registration), so the service
+   * itself is no longer a controller dependency — `attachQuestionProvider`
+   * listens on `ctx`. Kept as an accepted-and-ignored key so every existing
+   * caller and test still composes. */
+  userQuestions?: unknown
   /** Minimal facet of dsh's `ctx.commands` (spec §3.5): registration for
    * talon's own set (global — Ruling 3), the descriptor list `/help` prints,
    * and the executor every slash submission goes through. `images` is dsh
@@ -425,7 +429,8 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // panel's own dismissal AND a forced teardown/abort settle the enqueue with
   // a discriminated outcome, and only THIS function maps 'cancelled' to the
   // exact rejection dsh's plan-mode narrows on (Ruling 7).
-  detachers.push(attachQuestionProvider(deps.userQuestions as never, {
+  detachers.push(attachQuestionProvider(ctx as never, {
+    isBound: (agent) => agent === bound,
     present: async (request) => {
       const result = await panels.enqueue<{ kind: 'answered'; answer: AskUserQuestionAnswer } | { kind: 'cancelled' }>({
         create: (finish) => new QuestionPanel(

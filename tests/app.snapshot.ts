@@ -11,13 +11,20 @@ import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion', 'agents-panel', 'card-workflow'] as const
 afterAll(() => expectObserved(OWNED))
 
-/** Captures the registered provider so a checkpoint can drive a real ask()
- * through the controller's QuestionPanel (mirrors tests/questions.spec.ts). */
-function questionService() {
-  let provider: { ask(req: unknown): Promise<unknown> } | undefined
+/** Drives a real ask() through the controller's QuestionPanel over the ctx
+ * waterfall dsh 0.1.2-alpha.1 moved questions onto (mirrors
+ * tests/questions.spec.ts). */
+function questionCtx() {
+  const listeners: ((req: unknown, next: () => Promise<unknown>) => unknown)[] = []
   return {
-    get provider() { return provider },
-    registerProvider(p: { ask(req: unknown): Promise<unknown> }) { provider = p; return () => { provider = undefined } },
+    on: (event: string, fn: (req: unknown, next: () => Promise<unknown>) => unknown) => {
+      if (event === 'user-questions/request') listeners.push(fn)
+      return () => {}
+    },
+    ask: async (request: unknown): Promise<unknown> => {
+      for (const fn of listeners) return await fn(request, async () => { throw new Error('no answerer') })
+      throw new Error('no answerer')
+    },
   }
 }
 
@@ -150,11 +157,11 @@ describe('talon snapshots', () => {
 
   it('question-multiselect', async () => {
     const terminal = new HeadlessTerminal(72, 24)
-    const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
+        const questions = questionCtx()
+    const controller = createController({ ctx: questions, agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     const before = terminal.frames
-    const outcome = userQuestions.provider!.ask({ questions: [{
+    const outcome = questions.ask({ questions: [{
       id: 'q1', header: 'Checks', question: 'Which checks should run before the push?',
       options: [{ label: 'Types', description: 'tsc --noEmit' }, { label: 'Tests' }, { label: 'Lint' }],
       multiSelect: true,
@@ -173,11 +180,11 @@ describe('talon snapshots', () => {
 
   it('plan-review', async () => {
     const terminal = new HeadlessTerminal(72, 24)
-    const userQuestions = questionService()
-    const controller = createController({ ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, userQuestions, commands: commandService(), ...sessionDeps })
+        const questions = questionCtx()
+    const controller = createController({ ctx: questions, agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {}, commands: commandService(), ...sessionDeps })
     await terminal.waitForFrame(0)
     const before = terminal.frames
-    const outcome = userQuestions.provider!.ask({ questions: [{
+    const outcome = questions.ask({ questions: [{
       id: 'q1', header: 'Plan review', question: 'Approve this plan and leave plan mode?',
       detail: '# The plan\n1. do things',
       options: [{ label: 'Approve' }, { label: 'Keep planning' }],

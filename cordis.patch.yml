@@ -6,32 +6,16 @@
 # 'talon-ui/boot') work exactly like '@deepseek-ai/dsh-tui/prompt' did for
 # the old TUI, since both are ordinary package `exports` entries.
 #
-# session-projection-cache is not part of dsh-base (verified: absent from
-# packages/bundle/base/cordis.patch.yml, present only in the web-app bundle)
-# so talon inserts it itself for the cheap session-title ladder (spec §3.6).
-# Its Config schema has no defaults (both fields z.natural().required()), so
-# the row must state them explicitly; values mirror the web-app bundle's own
-# tuned row (packages/bundle/web-app/cordis.patch.yml).
+# THIS LAYER ONLY COMPOSES WHAT dsh-base DOES NOT. A row base already carries
+# is a hard boot failure — `duplicate loader entry id` — not a harmless
+# override, so every row below must be re-checked against
+# `packages/bundle/base/cordis.patch.yml` whenever the harness version moves.
+#
+# Dropped at dsh 0.1.2-alpha.1 (they were needed at 0.1.1-rc.1 and base now
+# carries all four, the cache row with the very config talon used):
+#   storage, storage-json, storage-domain, session-projection-cache
+#
 - insert:
-    - id: storage
-      name: '@deepseek-ai/dsh-storage'
-
-    - id: storage-json
-      name: '@deepseek-ai/dsh-storage-json'
-      config:
-        root: !!js dshHomePath('storages')
-
-    - id: storage-domain
-      name: '@deepseek-ai/dsh-storage-domain'
-      config:
-        backend: json
-
-    - id: session-projection-cache
-      name: '@deepseek-ai/dsh-session-projection-cache'
-      config:
-        writeEveryEvents: 200
-        writeIntervalMs: 5000
-
     # dsh-base composes the user-questions SERVICE but not the model-facing
     # ask_user_question tool (verified: no tool-ask-user row in
     # packages/bundle/base/cordis.patch.yml; only plan-mode consumes the seam

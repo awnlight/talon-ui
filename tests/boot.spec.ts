@@ -22,7 +22,7 @@ describe('talon-boot plugin shape', () => {
 // path directly intercepts it correctly.
 vi.mock('../../deepseek-harness/packages/core/agent/lib/types/index.d.ts', () => ({ installModelSelection: vi.fn(() => () => {}) }))
 
-function bootCtx(overrides: Partial<{ roots: unknown[]; services: Record<string, unknown> }> = {}) {
+function bootCtx(overrides: Partial<{ roots: unknown[]; services: Record<string, unknown>; registryGone: boolean }> = {}) {
   const created: unknown[] = []
   const resumed: unknown[] = []
   const ctx = {
@@ -33,9 +33,15 @@ function bootCtx(overrides: Partial<{ roots: unknown[]; services: Record<string,
       create: vi.fn(async (opts: unknown) => { created.push(opts); return { agent: { id: (opts as any).sessionId }, dispose: async () => {} } }),
       resume: vi.fn(async (opts: unknown) => { resumed.push(opts); return { agent: { id: (opts as any).resumeSessionId }, dispose: async () => {} } }),
     },
-    get: (name: string) => (overrides.services ?? {
-      agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) },
-    })[name],
+    // `agents` is reached through get(), like every other service: the injected
+    // accessor throws once the tree goes inactive, which is exactly the window
+    // the loader-settlement await sits in (dsh 0.1.2-alpha.1).
+    get: (name: string) => {
+      if (name === 'agents') return overrides.registryGone === true ? undefined : ctx.agents
+      return (overrides.services ?? {
+        agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) },
+      })[name]
+    },
   }
   return ctx
 }
@@ -123,5 +129,29 @@ describe('talon-boot run()', () => {
     apply(ctx as never, {})
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
     expect(stderr.mock.calls.some(([s]) => String(s).includes('no-stack-message'))).toBe(true)
+  })
+})
+
+describe('talon-boot when the tree is already shutting down', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('boots into nothing quietly — a disposed tree is not a failure to report', async () => {
+    // Settlement can outlast the tree: `apply` detaches run(), run awaits the
+    // loader, and an early shutdown lands right there. dsh's headless bundle
+    // returns on the same condition for the same reason.
+    const ctx = bootCtx({ registryGone: true })
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    boot.apply(ctx as never, {})
+    await new Promise((r) => setTimeout(r, 20))
+    expect(ctx.agents.create).not.toHaveBeenCalled()
+    expect(stderr).not.toHaveBeenCalled()
+    expect(exit).not.toHaveBeenCalled()
+  })
+
+  it('tells a DELIBERATE caller the registry is gone, rather than throwing something opaque', async () => {
+    const ctx = bootCtx({ registryGone: true })
+    await expect(boot.createRootAgent(ctx as never)).rejects.toThrow(/agent registry is gone/)
+    await expect(boot.resumeRootAgent(ctx as never, 's-1')).rejects.toThrow(/agent registry is gone/)
   })
 })

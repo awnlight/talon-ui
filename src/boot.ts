@@ -39,11 +39,26 @@ import type { Agent, AgentRegistry, ModelSelectionRef } from '@deepseek-ai/dsh-a
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 /** Minimal structural shape of the Cordis plugin context this file needs.
- * `get` mirrors cordis Context.get: undefined when a service is absent. */
+ * `get` mirrors cordis Context.get: undefined when a service is absent.
+ *
+ * `agents` is reached through `get`, NOT through the injected accessor. The
+ * accessor throws `cannot get required service "agents" in inactive context`
+ * once the tree is disposing, and the boot below deliberately awaits loader
+ * settlement first — so an early shutdown lands exactly in that window. dsh's
+ * own headless bundle reads the same service the same way for the same reason
+ * ("early process shutdown can dispose the tree while settlement is pending",
+ * packages/bundle/headless/src/index.ts). Found live on dsh 0.1.2-alpha.1. */
 export interface BootContext {
-  agents: AgentRegistry
   get(name: string): unknown
 }
+
+/** The registry, or `undefined` when the tree is no longer active. */
+function agentRegistry(ctx: BootContext): AgentRegistry | undefined {
+  return ctx.get('agents') as AgentRegistry | undefined
+}
+
+/** Thrown when a caller needs the registry and the tree has gone away. */
+const NO_REGISTRY = 'talon-boot: the agent registry is gone (the plugin tree is shutting down)'
 
 export const name = 'talon-boot'
 // 'agentLoop' is a real dependency, not just 'agents': AgentRegistry.create
@@ -93,6 +108,9 @@ async function run(ctx: BootContext, config: Config): Promise<void> {
   // adapters/tools/skills are not half-composed (dsh-headless precedent,
   // packages/bundle/headless/src/index.ts:99). Absent outside Loader boots.
   await (ctx.get('loader') as { await(): Promise<void> } | undefined)?.await()
+  // Settlement can outlast the tree on an early shutdown: no registry means
+  // there is nothing left to boot INTO, which is not a failure to report.
+  if (agentRegistry(ctx) === undefined) return
   await createRootAgent(ctx, config.sessionId)
 }
 
@@ -107,9 +125,11 @@ async function run(ctx: BootContext, config: Config): Promise<void> {
  */
 export async function createRootAgent(ctx: BootContext, sessionId?: string): Promise<{ agent: Agent }> {
   const id = SessionId(sessionId ?? `session-${crypto.randomUUID()}`)
-  const existing = ctx.agents.roots().find(agent => agent.id === id)
+  const agents = agentRegistry(ctx)
+  if (agents === undefined) throw new Error(NO_REGISTRY)
+  const existing = agents.roots().find(agent => agent.id === id)
   if (existing) return { agent: existing }
-  return await ctx.agents.create({
+  return await agents.create({
     sessionId: id,
     meta: { cwd: process.cwd() },
     ...(await modelComposition(ctx)),
@@ -127,7 +147,9 @@ export async function createRootAgent(ctx: BootContext, sessionId?: string): Pro
  * `createRootAgent`.
  */
 export async function resumeRootAgent(ctx: BootContext, resumeSessionId: string): Promise<{ agent: Agent }> {
-  return await ctx.agents.resume({
+  const agents = agentRegistry(ctx)
+  if (agents === undefined) throw new Error(NO_REGISTRY)
+  return await agents.resume({
     resumeSessionId: SessionId(resumeSessionId),
     ...(await modelComposition(ctx)),
   })

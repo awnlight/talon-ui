@@ -46,11 +46,14 @@ function fakeAgent(id = 'main') {
   }
 }
 
-function fakeQuestionService() {
-  let provider: { ask(req: unknown): Promise<unknown> } | undefined
-  return {
-    get provider() { return provider },
-    registerProvider(p: { ask(req: unknown): Promise<unknown> }) { provider = p; return () => { provider = undefined } },
+/** Questions ride the ctx waterfall since dsh 0.1.2-alpha.1; the gate drives
+ * one through it exactly as the service would. */
+function askThrough(ctx: { listeners: Map<string, ((...a: never[]) => unknown)[]> }) {
+  return async (request: unknown): Promise<unknown> => {
+    for (const fn of ctx.listeners.get('user-questions/request') ?? []) {
+      return await (fn as unknown as (r: unknown, n: () => Promise<unknown>) => Promise<unknown>)(request, async () => { throw new Error('no answerer') })
+    }
+    throw new Error('no answerer')
   }
 }
 
@@ -90,10 +93,9 @@ function mount() {
   // shrink from a SCROLLED transcript is the one unavoidable redraw, pinned by
   // its own test rather than smuggled into this one.
   const terminal = new HeadlessTerminal(60, 20)
-  const userQuestions = fakeQuestionService()
   const commands = roundtripCommandService((event) => ctx.emit('session/event', agent.session, event))
   const controller = createController({
-    ctx, agent, terminal, palette: createPalette(false), exit: vi.fn(), userQuestions, commands,
+    ctx, agent, terminal, palette: createPalette(false), exit: vi.fn(), commands,
     agents: { resume: async () => ({ agent: fakeAgent('resumed') }) },
     createRootAgent: async () => ({ agent: fakeAgent('fresh') }),
     services: {
@@ -107,12 +109,12 @@ function mount() {
     },
     modelSelection: { current: undefined },
   })
-  return { ctx, agent, terminal, userQuestions, commands, controller }
+  return { ctx, agent, terminal, ask: askThrough(ctx), commands, controller }
 }
 
 describe('zero-scrollback-wipe gate (D10④)', () => {
   it('the full T2 interaction flow completes with zero ED3 wipes', async () => {
-    const { ctx, agent, terminal, userQuestions, commands, controller } = mount()
+    const { ctx, agent, terminal, ask, commands, controller } = mount()
     await terminal.waitForFrame(0)
 
     // Phase 1: user message → streaming deltas → settle → turn end.
@@ -186,7 +188,7 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
 
     // Phase 3: question request (multiSelect) → space + enter.
     before = terminal.frames
-    const ask = userQuestions.provider!.ask({ questions: [{ id: 'q1', question: 'Which checks should run?', multiSelect: true, options: [{ label: 'Lint' }, { label: 'Tests' }] }] })
+    const asked = ask({ questions: [{ id: 'q1', question: 'Which checks should run?', multiSelect: true, options: [{ label: 'Lint' }, { label: 'Tests' }] }], agent })
     await terminal.waitForFrame(before)
     await vi.waitFor(() => expect(terminal.snapshot()).toContain('1. [ ] Lint')) // the question body itself sits in the panel's scroll region at 14 rows
     before = terminal.frames
@@ -194,7 +196,7 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
     await terminal.waitForFrame(before)
     await vi.waitFor(() => expect(terminal.snapshot()).toContain('1. [x] Lint'))
     terminal.input('\r')
-    await expect(ask).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Lint'] }] })
+    await expect(asked).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Lint'] }] })
     expect(controller.panels.active).toBeUndefined()
 
     // Phase 4: '/' → slash menu open → esc closes it (draft cleared for phase 5).
