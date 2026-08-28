@@ -214,3 +214,29 @@ describe('compaction (spec §4.1, rulings 6 and 7)', () => {
     expect(translateSessionEvent({ type: 'compaction/prune', data: { shadowedSeqs: [1, 2] } })).toEqual([])
   })
 })
+
+describe('retry + interrupted (spec §4.1, rulings 8 and 9)', () => {
+  const retry = (over: Record<string, unknown>) => translateSessionEvent({ type: 'llm/retry', data: {
+    retryId: 'r1', turn: 1, step: 2, provider: 'deepseek', policyKey: 'p', retry: 2, delayMs: 750,
+    failure: { message: 'connection reset', code: 'ECONNRESET' }, ...over,
+  } })
+
+  it('carries the attempt, the limit and the failure message', () => {
+    expect(retry({ mode: 'normal', maxRetries: 5 }))
+      .toEqual([{ kind: 'retry-notice', turn: 1, step: 2, retry: 2, limit: 5, delayMs: 750, message: 'connection reset' }])
+  })
+  it('reads the always-retry mode as an unbounded limit', () => {
+    expect(retry({ mode: 'always' })[0]).toMatchObject({ limit: '∞' })
+  })
+  it('survives a failure with no message', () => {
+    expect(retry({ mode: 'always', failure: {} })[0]).toMatchObject({ message: '' })
+  })
+  it('renders nothing for retry-started — the notice already said it', () => {
+    expect(translateSessionEvent({ type: 'llm/retry-started', data: { retryId: 'r1', turn: 1, step: 2, retry: 2 } })).toEqual([])
+  })
+  it('an interrupted assistant message settles like any other (ruling 9)', () => {
+    expect(translateSessionEvent({ type: 'assistant/message', data: {
+      turn: 1, step: 1, interrupted: true, message: { content: [{ type: 'text', text: 'the delivered prefix' }] },
+    } })).toEqual([{ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'the delivered prefix' }] }])
+  })
+})

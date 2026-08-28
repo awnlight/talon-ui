@@ -102,6 +102,16 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       return [{ kind: 'compaction-live', phase: 'start' }]
     case 'compaction/end':
       return [{ kind: 'compaction-live', phase: 'end' }]
+    // `llm/retry-started` and a successful recovery render NOTHING: the
+    // notice below already said a retry is happening, and the re-stream
+    // speaks for itself. Exhaustion arrives as an ordinary error turn-end.
+    case 'llm/retry':
+      return [{
+        kind: 'retry-notice', turn: d.turn, step: d.step, retry: d.retry,
+        limit: d.mode === 'always' ? '∞' : d.maxRetries,
+        delayMs: d.delayMs,
+        message: String((d.failure as { message?: unknown } | undefined)?.message ?? ''),
+      }]
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':

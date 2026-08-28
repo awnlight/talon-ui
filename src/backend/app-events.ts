@@ -15,6 +15,9 @@ export type AppEvent =
   // The LIVE indicator, consumed by the controller ALONE (ruling 7): never a
   // transcript cell, so a replayed orphan `compaction/start` cannot light it.
   | { kind: 'compaction-live'; phase: 'start' | 'end' }
+  // A failed model request (spec §4.1): the partial stream is WITHDRAWN and
+  // this notice takes its place. `limit` is '∞' under the always-retry mode.
+  | { kind: 'retry-notice'; turn: number; step: number; retry: number; limit: number | '∞'; delayMs: number; message: string }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }

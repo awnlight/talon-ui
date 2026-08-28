@@ -14,6 +14,9 @@ const TRIM_MARKER = '… earlier history not shown …'
  * ABOVE it — a position marker, never an erasure — and it renders byte-identically
  * on the live and replay paths because both reach it through the same event. */
 const COMPACTION_MARKER = '… earlier context was compacted …'
+/** What a failed model request says in the transcript (spec §4.1). */
+const RETRY_NOTICE = (e: { retry: number; limit: number | '∞'; delayMs: number; message: string }): string =>
+  `Retrying model request (${e.retry}/${e.limit}) in ${e.delayMs}ms: ${e.message}`
 
 // O(1) mount-cap accounting (I3 fix): the cap is measured in CONTENT lines
 // (logical lines before width-wrapping). Cells report their own count via
@@ -133,6 +136,15 @@ export class Transcript {
         break
       case 'compaction-live':
         break            // controller-owned live state (ruling 7): never a cell
+      case 'retry-notice': {
+        // The request failed, so the text it had begun to deliver never
+        // happened: withdraw it, then say why (spec §4.1).
+        this.withdraw(`${event.turn}:${event.step}`)
+        const notice = { text: RETRY_NOTICE(event), tone: 'warning' as const }
+        const c = new NoticeCell(notice, this.palette)
+        this.appendCell(c, c.contentLineCount())
+        break
+      }
       case 'context-card':
         {
           const c = new ContextCardCell(event.label, event.summary, event.text, this.palette)
@@ -237,6 +249,26 @@ export class Transcript {
    * unless it is the first child, or unless one of the two cells the spacer
    * would separate is invisible (hidden mode, spec §4.1 spacing). The spacer
    * is mounted either way — a later Ctrl+O reflow can bring it back. */
+  /** The ONE sanctioned removal of a mounted component (spec §5.3): a model
+   * request that failed part-way through never happened, so the partial text
+   * leaves the transcript — together with the blank row that introduced it, or
+   * the withdrawal would leave a gap where the text used to be. A cell that
+   * already SETTLED is never withdrawn: that content is real. */
+  private withdraw(key: string): void {
+    if (this.live?.key !== key || this.live.cell.isSettled()) return
+    const cell = this.live.cell
+    const index = this.container.children.indexOf(cell)
+    const spacer = index > 0 ? this.container.children[index - 1] : undefined
+    this.mountedLineCount -= this.lineCountOf(cell)
+    this.container.removeChild(cell)
+    if (spacer instanceof SpacerCell) {
+      this.mountedLineCount -= spacer.contentLineCount()
+      this.container.removeChild(spacer)
+    }
+    this.live = undefined
+    if (cell === this.headerOwner) { this.headerOwner = undefined; this.headerTurn = undefined }
+  }
+
   private appendCell(cell: Component, lines: number): void {
     if (this.container.children.length > 0) {
       const spacer = new SpacerCell()

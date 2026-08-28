@@ -472,3 +472,70 @@ describe('Transcript compaction marker (spec §4.1)', () => {
     expect(t.container.render(80)).toEqual([])
   })
 })
+
+describe('Transcript retry withdrawal (spec §4.1/§5.3, ruling 8)', () => {
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+  const rows = (t: Transcript): string[] => t.container.render(80)
+  const retry = (over: Partial<Extract<AppEvent, { kind: 'retry-notice' }>> = {}): AppEvent =>
+    ({ kind: 'retry-notice', turn: 1, step: 1, retry: 2, limit: 5, delayMs: 750, message: 'connection reset', ...over })
+
+  it('takes the partial stream away — with its blank row — and says why', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'go' })
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'half an ans' })
+    expect(rows(t).join('\n')).toContain('half an ans')
+
+    t.apply(retry())
+    const out = rows(t)
+    expect(out.join('\n')).not.toContain('half an ans')
+    expect(out.join('\n')).not.toContain('talon')
+    expect(out).toContain('Retrying model request (2/5) in 750ms: connection reset')
+    expect(out.some((row, i) => row === '' && out[i + 1] === '')).toBe(false)   // no gap where the text was
+    expect(accounted(t)).toBe(out.length)
+  })
+
+  it('re-streams into a clean cell, so the recovered turn shows exactly one message', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'half an ans' })
+    t.apply(retry())
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'the whole answer' }] })
+    const out = rows(t)
+    expect(out.filter((row) => row.includes('talon')).length).toBe(1)
+    expect(out.join('\n')).toContain('the whole answer')
+    expect(accounted(t)).toBe(out.length)
+  })
+
+  it('never withdraws a SETTLED cell, nor another step, nor when nothing is live', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'real content' }] })
+    t.apply(retry())                                     // settled: that content is real
+    expect(rows(t).join('\n')).toContain('real content')
+
+    const other = new Transcript(p)
+    other.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'step one' })
+    other.apply(retry({ step: 2 }))                      // a different step's failure
+    expect(rows(other).join('\n')).toContain('step one')
+
+    const empty = new Transcript(p)
+    empty.apply(retry())                                 // nothing live at all
+    expect(rows(empty)).toEqual(['Retrying model request (2/5) in 750ms: connection reset'])
+    expect(accounted(empty)).toBe(1)
+  })
+
+  it('withdraws the FIRST cell cleanly, with no spacer to take with it', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'half' })
+    t.apply(retry())
+    expect(rows(t)).toEqual(['Retrying model request (2/5) in 750ms: connection reset'])
+    expect(accounted(t)).toBe(1)
+  })
+
+  it('forgets a withdrawn header owner, so the next step of the turn prints one', () => {
+    const t = new Transcript(p)
+    t.setCardVisibility('hidden')
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'half' })
+    t.apply(retry())
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'recovered' }] })
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(1)
+  })
+})

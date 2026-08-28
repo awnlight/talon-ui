@@ -288,7 +288,9 @@ Translate: compact-checkpoint `user/message` (Ruling 6) → `{ kind:'compaction-
 
 `llm/retry` → `{ kind:'retry-notice'; turn; step; retry; limit: number|'∞'; delayMs; message }`: transcript withdraws the live streaming cell for `${turn}:${step}` (subtract its lines from the cap; the cell had settled nothing) and appends the warning notice `Retrying model request (n/limit) in Xms: <msg>`. `llm/retry-started` → `[]`. `assistant/message.interrupted` → normal settle (Ruling 9; pin with a test).
 
-- [ ] Steps: failing tests (withdraw removes rows + fixes accounting; notice format incl. ∞ arm; retry after partial stream then successful re-stream renders exactly one final message; interrupted settle) → implement → gate. Commit: `feat: retry withdraws the failed stream + warning notice; interrupted prefix settles plain (spec §4.1, rc.1)`
+**Verified:** the `llm/retry` union is exactly as cribbed (`mode: 'normal'` carries `maxRetries`, `mode: 'always'` carries none). `withdraw` takes the partial cell's **preceding spacer** with it — otherwise the withdrawal leaves a blank gap exactly where the text used to be — and clears the hidden-mode header owner, so the recovered step still prints its header. A SETTLED cell is never withdrawn: that content is real. `llm/retry-started` needs no case at all; translate's skip-safe default already answers `[]`, and a test pins it. Ruling 9 needed no code — `interrupted` was already ignored, so an interrupted prefix settles like any other message; a test now pins that it stays that way.
+
+- [x] Steps: failing tests (withdraw removes rows + fixes accounting; notice format incl. ∞ arm; retry after partial stream then successful re-stream renders exactly one final message; interrupted settle) → implement → gate. Commit: `feat: retry withdraws the failed stream + warning notice; interrupted prefix settles plain (spec §4.1, rc.1)`
 
 ### Task 15: footer metrics line + prompt-glyph animation
 
