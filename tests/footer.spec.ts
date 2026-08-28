@@ -5,7 +5,7 @@ import { Footer, type FooterView } from '../src/ui/composer/footer.ts'
 
 const p = createPalette(false)
 const view = (over: Partial<FooterView> = {}): FooterView => ({
-  cwd: '~/proj/app', branch: 'main', model: 'deepseek-chat', cachePercent: 87, contextPercent: 62, queued: 0, ...over,
+  cwd: '~/proj/app', branch: 'main', model: 'deepseek-chat', cachePercent: 87, contextPercent: 62, queued: 0, agents: 0, ...over,
 })
 const render = (over: Partial<FooterView> = {}, width = 72): string => {
   const footer = new Footer(p)
@@ -57,5 +57,16 @@ describe('Footer (spec §4.3)', () => {
     footer.set(view({ queued: 0 }))
     expect(footer.render(72)[0]).toBe(createPalette(true).dim('~/proj/app · main · deepseek-chat · cache 87% · 62% ctx'))
     expect(() => footer.invalidate()).not.toThrow()
+  })
+})
+
+describe('Footer subagent badge (spec §3.9)', () => {
+  it('shows running subagents beside the queue, and only while some are running', () => {
+    expect(render({ agents: 2 })).toContain('⚙ 2 agents')
+    expect(render({ agents: 1 })).toContain('⚙ 1 agent')
+    expect(render({ agents: 0 })).not.toContain('agent')
+    const both = render({ agents: 3, queued: 2 })
+    expect(both).toContain('⚙ 3 agents · ⏳ 2 queued')
+    expect(visibleWidth(both)).toBe(72)
   })
 })

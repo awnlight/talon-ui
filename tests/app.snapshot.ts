@@ -2,12 +2,13 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
+import { AgentsPanel } from '../src/ui/panels/agents-panel.ts'
 import { ModelPanel, type ModelPick } from '../src/ui/panels/model-panel.ts'
 import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion', 'agents-panel'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -651,6 +652,37 @@ describe('talon snapshots', () => {
     await vi.waitFor(() => expect(terminal.snapshot()).toContain('controller.ts'))
     await checkpoint('at-completion', terminal)
 
+    await controller.dispose()
+  })
+
+  it('agents-panel', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 16)
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps,
+    })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    let panel: AgentsPanel | undefined
+    void controller.panels.enqueue<undefined>({
+      create: (finish) => (panel = new AgentsPanel(() => finish(undefined), createPalette(true))),
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)
+    // The shape `listDescendants` answers with: an interpreted tree, including
+    // a diagnostic the panel shows dim rather than as an error.
+    panel!.setEntries([
+      { kind: 'child', id: 's-review', depth: 1, activity: 'running', mode: 'continuable', label: 'reviewer' },
+      { kind: 'child', id: 's-grep', depth: 2, activity: 'inactive', mode: 'one-shot', label: 'grep pass' },
+      { kind: 'diagnostic', id: 's-broken', depth: 2, reason: 'corrupt' },
+    ])
+    await type(terminal, ['x'])            // any key repaints; none of them close
+    await checkpoint('agents-panel', terminal)
+
+    const after = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(after)
     await controller.dispose()
   })
 

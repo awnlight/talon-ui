@@ -40,6 +40,7 @@ export interface SessionCommandDeps {
   openResume(): void
   newSession(): void
   openModel(): void
+  openAgents(): void
 }
 
 /** The session-switching pair (spec D8/§3.5). Both handlers only START the
@@ -62,6 +63,10 @@ export function registerSessionCommands(
     commands.register({
       name: 'model', description: 'Choose the model for the next step',
       handler: () => { deps.openModel(); return { kind: 'success' } },
+    }),
+    commands.register({
+      name: 'agents', description: 'List the subagents of this session',
+      handler: () => { deps.openAgents(); return { kind: 'success' } },
     }),
   ]
   return () => { for (const dispose of disposers.splice(0)) dispose() }

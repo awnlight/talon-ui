@@ -27,6 +27,7 @@ export const CHECKPOINTS = [
   'untrusted-controls',
   'model-selector',
   'at-completion',
+  'agents-panel',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

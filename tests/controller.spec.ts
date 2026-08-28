@@ -522,6 +522,72 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('/agents lists the durable tree, and says so where subagents are not composed (spec §3.9)', async () => {
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      services: { subagents: { listDescendants: async () => [
+        { kind: 'child' as const, id: 's-1', depth: 1, activity: 'running' as const, mode: 'continuable' as const, label: 'reviewer' },
+        { kind: 'diagnostic' as const, id: 's-2', depth: 2, reason: 'corrupt' },
+      ] } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('agents')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('reviewer'))
+    expect(terminal.snapshot()).toContain('corrupt')
+    const before = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(before)
+    await controller.dispose()
+
+    const none = dispatchingCommandService()
+    const without = setup({ commands: none })
+    await without.terminal.waitForFrame(0)
+    none.handlers.get('agents')!()
+    await vi.waitFor(() => expect(without.terminal.snapshot()).toContain('not available in this composition'))
+    await without.controller.dispose()
+  })
+
+  it('/agents survives a listing that throws, and shows an empty tree', async () => {
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      services: { subagents: { listDescendants: async () => { throw new Error('store is gone') } } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('agents')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Could not list the subagents'))
+    expect(terminal.snapshot()).toContain('No subagents in this session.')
+    await controller.dispose()
+  })
+
+  it('counts LIVE subagents in the footer, floors at zero, and ignores another agent\'s children', async () => {
+    const { ctx, agent, terminal, controller } = setup({ cols: 120 })
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('subagent/start', {}, agent)
+    ctx.emit('subagent/start', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⚙ 2 agents')
+
+    before = terminal.frames
+    ctx.emit('subagent/end', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⚙ 1 agent')
+
+    // Another agent's children — start and end alike — and one end too many:
+    // none of them can move this badge.
+    const other = fakeAgent('other')
+    ctx.emit('subagent/start', {}, other)
+    ctx.emit('subagent/end', {}, other)
+    before = terminal.frames
+    ctx.emit('subagent/end', {}, agent)
+    ctx.emit('subagent/end', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('agent')
+    await controller.dispose()
+  })
+
   it('Ctrl+V attaches a clipboard image as a mention, and every failure leaves the composer alone', async () => {
     const png = { mediaType: 'image/png' as const, data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }
     const stored = setup({
@@ -975,7 +1041,7 @@ describe('controller', () => {
     const { ctx, agent, terminal, controller } = setup({ commands: { ...svc, list: () => [{ name: 'help', description: 'List available commands' }] } })
     const text = (name: string): string | undefined => (svc.handlers.get(name)!() as { text?: string }).text
     await terminal.waitForFrame(0)
-    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'model', 'palette', 'quit', 'resume', 'status'])
+    expect([...svc.handlers.keys()].sort()).toEqual(['agents', 'clear', 'exit', 'help', 'model', 'palette', 'quit', 'resume', 'status'])
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent idle`)
     expect(text('help')).toBe('/help — List available commands')
     expect(text('palette')).toBe(paletteTable(createPalette(true)))   // generated from the spec, never hand-typed

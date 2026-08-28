@@ -23,6 +23,7 @@ import { pasteImage, readClipboardImage, type ClipboardImageReader } from '../ui
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
+import { AgentsPanel, type AgentEntry } from '../ui/panels/agents-panel.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { Notifier } from '../ui/notify.js'
@@ -104,6 +105,8 @@ export interface ControllerDeps {
     fileReferences?: { list(agent: unknown, query: string, signal: AbortSignal): Promise<readonly { path: string; kind: 'file' | 'directory' }[]> }
     /** `ctx.attachments`. Absent: Ctrl+V says so and changes nothing. */
     attachments?: { saveImages(inputs: readonly { mediaType: string; data: Uint8Array }[]): Promise<readonly { id: string }[]> }
+    /** `ctx.subagents`. Absent: `/agents` says so. */
+    subagents?: { listDescendants(rootSessionId: string, signal?: AbortSignal): Promise<readonly AgentEntry[]> }
   }
   /** Installed once per bind so a pick takes effect on the NEXT step
    * (`installModelSelection`'s own contract). Absent in tests that do not
@@ -154,6 +157,8 @@ const PASTE_NOTICE: Record<'unavailable' | 'empty' | 'failed', (reason: string) 
   failed: (reason) => `Could not attach the pasted image: ${reason}`,
 }
 const MODEL_FAILED = 'Could not read the model catalog:'
+const AGENTS_UNAVAILABLE = 'Subagents are not available in this composition.'
+const AGENTS_FAILED = 'Could not list the subagents:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
 const WORKSPACE_UNSET = 'cwd unset'
@@ -240,10 +245,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   let workspace = process.cwd()
   let branch = gitBranch(workspace)
   let queued = 0
+  // Subagents running RIGHT NOW (spec §3.9): live dispatch only, so a replayed
+  // log can never invent one — the compaction-indicator law, applied again.
+  let liveAgents = 0
   let phase: GlyphPhase = 'idle'
   const syncFooter = (): void => {
     const view = metrics.read()
-    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued })
+    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued, agents: liveAgents })
   }
   const setPhase = (next: GlyphPhase): void => { phase = next; composer.setPhase(next) }
   const showCompaction = (): void => {
@@ -302,6 +310,22 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     tui.requestRender()
   }))
 
+  // `subagent/start|end` are ctx events carrying the PARENT agent, so the
+  // filter is identity against the bound agent — the same shape every other
+  // per-agent listener uses.
+  detachers.push(ctx.on('subagent/start', (_info: unknown, parent: unknown) => {
+    if (parent !== bound || disposed) return
+    liveAgents += 1
+    syncFooter()
+    tui.requestRender()
+  }))
+  detachers.push(ctx.on('subagent/end', (_info: unknown, parent: unknown) => {
+    if (parent !== bound || disposed) return
+    liveAgents = Math.max(0, liveAgents - 1)     // a floor, like the queued badge
+    syncFooter()
+    tui.requestRender()
+  }))
+
   detachers.push(ctx.on('agent/status', (payload: { agent: unknown; status: 'idle' | 'running' }) => {
     if (payload.agent !== bound || disposed) return
     running = payload.status === 'running'
@@ -352,6 +376,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     workspace = process.cwd()
     branch = gitBranch(workspace)
     queued = 0
+    liveAgents = 0                  // the new session has its own children, if any
     setPhase(running ? 'wait' : 'idle')
     transcript = new Transcript(palette)
     transcriptSlot.clear()
@@ -568,6 +593,31 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     })
   }
 
+  /** `/agents` (spec §3.9): a read-only tree, filled from the durable listing
+   * the subagent service already interprets. */
+  const openAgents = (): void => {
+    const subagents = deps.services.subagents
+    if (subagents === undefined) { appendLocalNotice({ text: AGENTS_UNAVAILABLE, tone: 'error' }); return }
+    let settle!: () => void
+    const panel = new AgentsPanel(() => settle(), palette)
+    void panels.enqueue<undefined>({
+      create: (finish) => { settle = () => finish(undefined); return panel },
+      forced: () => ({ outcome: undefined }),
+    })
+    void (async () => {
+      try {
+        // The session id, not the agent id: `listDescendants` walks the
+        // durable session tree (`bound.id` IS that id — the agent is named
+        // after its session — but read it off the facet the same way).
+        panel.setEntries([...await subagents.listDescendants(bound.id)])
+      } catch (cause) {
+        appendLocalNotice({ text: `${AGENTS_FAILED} ${failureText(cause)}`, tone: 'error' })
+        panel.setEntries([])
+      }
+      tui.requestRender()
+    })()
+  }
+
   const openResume = (): void => {
     if (running) { appendLocalNotice({ text: RESUME_RUNNING, tone: 'warning' }); return }
     const query = deps.services.sessionQuery
@@ -614,7 +664,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     paletteTable: () => paletteTable(palette),
     list: () => deps.commands.list(bound),
   }))
-  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession, openModel }))
+  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession, openModel, openAgents }))
 
   // Slash discovery: the provider reads the registry through this closure, so
   // it needs no rebuild when commands come and go (Ruling 4) — an already-open

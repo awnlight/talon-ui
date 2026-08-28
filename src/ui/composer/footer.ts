@@ -17,13 +17,16 @@ export interface FooterView {
   cachePercent: number | undefined
   contextPercent: number | undefined
   queued: number
+  /** Subagents running right now (spec §3.9). Live and ephemeral: a replayed
+   * log can never light this, only live `subagent/start` can. */
+  agents: number
 }
 
 const SEPARATOR = ' · '
 const GAP = 2
 
 export class Footer implements Component {
-  private view: FooterView = { cwd: undefined, branch: undefined, model: undefined, cachePercent: undefined, contextPercent: undefined, queued: 0 }
+  private view: FooterView = { cwd: undefined, branch: undefined, model: undefined, cachePercent: undefined, contextPercent: undefined, queued: 0, agents: 0 }
 
   constructor(private readonly palette: Palette) {}
 
@@ -32,7 +35,7 @@ export class Footer implements Component {
 
   render(width: number): string[] {
     const safe = Math.max(1, width)
-    const { cwd, branch, model, cachePercent, contextPercent, queued } = this.view
+    const { cwd, branch, model, cachePercent, contextPercent, queued, agents } = this.view
     const left = [
       cwd, branch, model,
       cachePercent === undefined ? undefined : `cache ${cachePercent}%`,
@@ -40,7 +43,10 @@ export class Footer implements Component {
     ].filter((part): part is string => part !== undefined && part !== '')
       .map(displayText)
       .join(SEPARATOR)
-    const right = queued > 0 ? `⏳ ${queued} queued` : ''
+    const right = [
+      agents > 0 ? `⚙ ${agents} agent${agents === 1 ? '' : 's'}` : undefined,
+      queued > 0 ? `⏳ ${queued} queued` : undefined,
+    ].filter((part): part is string => part !== undefined).join(SEPARATOR)
     if (right === '') return [this.palette.dim(truncateToWidth(left, safe, '…'))]
 
     const rightWidth = visibleWidth(right)

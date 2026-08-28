@@ -67,9 +67,11 @@ describe('registerSessionCommands', () => {
     opened: 0,
     fresh: 0,
     models: 0,
+    agents: 0,
     openResume() { this.opened += 1 },
     newSession() { this.fresh += 1 },
     openModel() { this.models += 1 },
+    openAgents() { this.agents += 1 },
   })
   it('registers the session pair with its descriptions and disposes as one', () => {
     const svc = fakeCommands()
@@ -78,6 +80,7 @@ describe('registerSessionCommands', () => {
       ['resume', 'Resume a previous session'],
       ['clear', 'Start a fresh session'],
       ['model', 'Choose the model for the next step'],
+      ['agents', 'List the subagents of this session'],
     ])
     off()
     expect(svc.defs.size).toBe(0)
@@ -89,6 +92,7 @@ describe('registerSessionCommands', () => {
     expect(await svc.defs.get('resume')!.handler(invoke)).toEqual({ kind: 'success' })
     expect(await svc.defs.get('clear')!.handler(invoke)).toEqual({ kind: 'success' })
     expect(await svc.defs.get('model')!.handler(invoke)).toEqual({ kind: 'success' })
-    expect([d.opened, d.fresh, d.models]).toEqual([1, 1, 1])
+    expect(await svc.defs.get('agents')!.handler(invoke)).toEqual({ kind: 'success' })
+    expect([d.opened, d.fresh, d.models, d.agents]).toEqual([1, 1, 1, 1])
   })
 })
