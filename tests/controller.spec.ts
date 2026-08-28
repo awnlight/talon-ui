@@ -421,7 +421,8 @@ describe('controller', () => {
     const before = home.terminal.frames
     home.ctx.emit('session/event', home.agent.session, { type: 'request/context', data: { model: 'deepseek-chat' } })
     await home.terminal.waitForFrame(before)
-    expect(home.terminal.snapshot()).toContain('"~ · deepseek-chat"')
+    // Leading spaces: the footer is content and sits in the gutter (gutter.ts).
+    expect(home.terminal.snapshot()).toContain('"  ~ · deepseek-chat"')
     await home.controller.dispose()
   })
 

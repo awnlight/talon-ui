@@ -3,55 +3,55 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @19,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Rename the flag."
+6| "  You"
+  style 2-4 bold underline
+7| "  Rename the flag."
 8| <blank>
-9| "◇ context · skill-catalog · 2 lines"
-  style 0-11 dim
-  style 25-34 dim
-10| "writing-plans"
-  style 0-12 dim
-11| "executing-plans"
-  style 0-14 dim
+9| "  ◇ context · skill-catalog · 2 lines"
+  style 2-13 dim
+  style 27-36 dim
+10| "  writing-plans"
+  style 2-14 dim
+11| "  executing-plans"
+  style 2-16 dim
 12| <blank>
-13| "talon"
-  style 0-4 fg-13 bold underline
-14| "Looking at the flag."
+13| "  talon"
+  style 2-6 fg-13 bold underline
+14| "  Looking at the flag."
 15| <blank>
-16| "◆ read · src/flags.ts:9"
-  style 0-22 fg-2
-17| "   9 export const flags = {"
-  style 2-3 dim
-  style 5-10 fg-6
-  style 12-16 fg-6
-18| "  10   modern: true,"
-  style 2-3 dim
-  style 15-18 fg-3
-19| "  11 }"
-  style 2-3 dim
-20| "└ 120 lines"
-  style 0-10 dim
+16| "  ◆ read · src/flags.ts:9"
+  style 2-24 fg-2
+17| "     9 export const flags = {"
+  style 4-5 dim
+  style 7-12 fg-6
+  style 14-18 fg-6
+18| "    10   modern: true,"
+  style 4-5 dim
+  style 17-20 fg-3
+19| "    11 }"
+  style 4-5 dim
+20| "  └ 120 lines"
+  style 2-12 dim
 21| <blank>
-22| "talon"
-  style 0-4 fg-13 bold underline
-23| "Renamed it."
+22| "  talon"
+  style 2-6 fg-13 bold underline
+23| "  Renamed it."
 24| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
 25| "❯"
   style 0-0 dim
   style 2-2 inverse
-26| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-27| "talon-ui"
+26| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+27| "  talon-ui"

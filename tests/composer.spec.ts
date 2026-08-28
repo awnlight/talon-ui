@@ -80,8 +80,10 @@ describe('Composer', () => {
     composer.flashHint('Agent is running — press Esc first', 'warning')
     tui.requestRender()
     await term.waitForFrame(before)
-    // warning = ANSI 33 → xterm palette index 3 (yellow)
-    expect(term.snapshot()).toMatch(/style 0-\d+ fg-3\b/)
+    // warning = ANSI 33 → xterm palette index 3 (yellow). The run starts at
+    // column 2, not 0: the hint is content and sits in the gutter, while the
+    // rule asserted above is a divider and keeps column 0 (gutter.ts).
+    expect(term.snapshot()).toMatch(/style 2-\d+ fg-3\b/)
     before = term.frames
     composer.setHint('enter send')
     tui.requestRender()

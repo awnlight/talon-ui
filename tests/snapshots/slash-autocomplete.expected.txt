@@ -3,16 +3,16 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @7,3
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
 6| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
@@ -27,6 +27,6 @@ cursor hidden @7,3
   style 8-42 dim
 11| "    status      Show session status"
   style 10-34 dim
-12| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
+12| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
 13-17| <blank>

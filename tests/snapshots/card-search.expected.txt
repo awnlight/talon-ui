@@ -3,47 +3,47 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @17,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Where is the flag used?"
+6| "  You"
+  style 2-4 bold underline
+7| "  Where is the flag used?"
 8| <blank>
-9| "◆ grep · modern"
-  style 0-14 fg-2
-10| "src/flags.ts"
-  style 0-11 bold
-11| "  L10:   modern: true,"
-  style 0-21 dim
-12| "src/app.ts"
-  style 0-9 bold
-13| "  L3: if (flags.modern) {"
-  style 0-24 dim
-14| "└ 42 matches · truncated"
-  style 0-23 dim
+9| "  ◆ grep · modern"
+  style 2-16 fg-2
+10| "  src/flags.ts"
+  style 2-13 bold
+11| "    L10:   modern: true,"
+  style 2-23 dim
+12| "  src/app.ts"
+  style 2-11 bold
+13| "    L3: if (flags.modern) {"
+  style 2-26 dim
+14| "  └ 42 matches · truncated"
+  style 2-25 dim
 15| <blank>
-16| "◆ glob · src/**/*.test.ts"
-  style 0-24 fg-2
-17| "src/flags.test.ts"
-  style 0-16 dim
-18| "src/app.test.ts"
-  style 0-14 dim
-19| "└ 2 paths"
-  style 0-8 dim
+16| "  ◆ glob · src/**/*.test.ts"
+  style 2-26 fg-2
+17| "  src/flags.test.ts"
+  style 2-18 dim
+18| "  src/app.test.ts"
+  style 2-16 dim
+19| "  └ 2 paths"
+  style 2-10 dim
 20| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
 21| "⚙"
   style 0-0 dim
   style 2-2 inverse
-22| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-23| "talon-ui"
+22| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+23| "  talon-ui"
