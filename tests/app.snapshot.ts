@@ -1,12 +1,12 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
-import { createPalette } from '../src/theme/palette.ts'
+import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
 import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -366,14 +366,14 @@ describe('talon snapshots', () => {
 
   /** The card checkpoints below share one harness: a controller bound to an
    * event-emitting ctx, driven purely by durable session events. */
-  const cardHarness = (rows: number) => {
+  const cardHarness = (rows: number, columns = 72) => {
     const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
     const ctx = {
       on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
       emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
     }
     const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
-    const terminal = new HeadlessTerminal(72, rows)
+    const terminal = new HeadlessTerminal(columns, rows)
     const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
     const send = (type: string, data: unknown) => ctx.emit('session/event', agent.session, { type, data })
     return { terminal, controller, send }
@@ -523,6 +523,23 @@ describe('talon snapshots', () => {
       await terminal.waitForFrame(before)
     }
     await checkpoint('cards-hidden', terminal)
+
+    await controller.dispose()
+  })
+
+  it('palette-table', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20, 108)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // `/palette` through the DURABLE path (Ruling 5): command/run then
+    // command/done, exactly as dsh's CommandRuntime records them, with the
+    // table generated from paletteSpec so the golden cannot drift from the
+    // spec table it documents.
+    send('command/run', { name: 'palette', args: '' })
+    send('command/done', { kind: 'success', text: paletteTable(createPalette(true)) })
+    await terminal.waitForFrame(before)
+    await checkpoint('palette-table', terminal)
 
     await controller.dispose()
   })

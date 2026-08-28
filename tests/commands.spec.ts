@@ -20,13 +20,14 @@ describe('registerTalonCommands', () => {
     requestExit() { this.exits += 1 },
     statusLines: () => ['session s1', 'workspace /w', 'agent idle'],
     list: () => [{ name: 'help', description: 'List commands' }, { name: 'status', description: 'Show session status' }],
+    paletteTable: () => 'talon palette · dark\nrole  open  close  purpose',
   })
   const invoke = { commandId: 'c', agent: {}, rawInput: '', signal: new AbortController().signal }
   it('registers the T2 set and disposes as one', () => {
     const svc = fakeCommands()
     const d = deps()
     const off = registerTalonCommands(svc as never, d)
-    expect([...svc.defs.keys()].sort()).toEqual(['exit', 'help', 'quit', 'status'])
+    expect([...svc.defs.keys()].sort()).toEqual(['exit', 'help', 'palette', 'quit', 'status'])
     off()
     expect(svc.defs.size).toBe(0)
   })
@@ -37,6 +38,12 @@ describe('registerTalonCommands', () => {
     expect(result.kind).toBe('success')
     expect(result.text).toContain('/help — List commands')
     expect(result.text).toContain('/status — Show session status')
+  })
+  it('palette returns the live spec table from deps', async () => {
+    const svc = fakeCommands()
+    registerTalonCommands(svc as never, deps())
+    const result = await svc.defs.get('palette')!.handler(invoke) as { kind: string; text?: string }
+    expect(result).toEqual({ kind: 'success', text: 'talon palette · dark\nrole  open  close  purpose' })
   })
   it('status returns deps.statusLines()', async () => {
     const svc = fakeCommands()

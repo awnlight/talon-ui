@@ -21,6 +21,7 @@ export const CHECKPOINTS = [
   'card-generic',
   'cards-expanded',
   'cards-hidden',
+  'palette-table',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

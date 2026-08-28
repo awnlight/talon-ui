@@ -11,7 +11,7 @@ import { registerSessionCommands, registerTalonCommands } from '../backend/comma
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
-import { displayText, type Palette } from '../theme/palette.js'
+import { displayText, type Palette, paletteTable } from '../theme/palette.js'
 import { Composer } from '../ui/composer/composer.js'
 import { createSlashProvider } from '../ui/composer/slash-provider.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
@@ -448,6 +448,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   detachers.push(registerTalonCommands(deps.commands, {
     requestExit,
     statusLines: () => [`session ${bound.id}`, `workspace ${process.cwd()}`, `agent ${running ? 'running' : 'idle'}`],
+    paletteTable: () => paletteTable(palette),
     list: () => deps.commands.list(bound),
   }))
   detachers.push(registerSessionCommands(deps.commands, { openResume, newSession }))

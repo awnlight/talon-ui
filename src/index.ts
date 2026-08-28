@@ -13,7 +13,7 @@
  * reads exactly as the task brief specifies, and so this plugin's types stay
  * decoupled from talon-boot's (separate plugins, per boot.ts's
  * dedicated-front-door decision). */
-import { ProcessTerminal } from '@earendil-works/pi-tui'
+import { ProcessTerminal, getCapabilities } from '@earendil-works/pi-tui'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { createController } from './app/controller.js'
 import { createRootAgent, resumeRootAgent } from './boot.js'
@@ -104,7 +104,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         ctx: anyCtx,
         agent,
         terminal,
-        palette: createPalette(enabled),
+        palette: createPalette(enabled, 'dark', getCapabilities().trueColor),
         userQuestions: anyCtx.userQuestions,
         commands: anyCtx.commands,
         // Not the bare registry: resume must carry the same model composition

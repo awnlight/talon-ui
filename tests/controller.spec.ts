@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Text } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
-import { createPalette } from '../src/theme/palette.ts'
+import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController, type ControllerDeps } from '../src/app/controller.ts'
 
 type Listener = (...args: unknown[]) => void
@@ -485,9 +485,10 @@ describe('controller', () => {
     const { ctx, agent, terminal, controller } = setup({ commands: { ...svc, list: () => [{ name: 'help', description: 'List available commands' }] } })
     const text = (name: string): string | undefined => (svc.handlers.get(name)!() as { text?: string }).text
     await terminal.waitForFrame(0)
-    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'quit', 'resume', 'status'])
+    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'palette', 'quit', 'resume', 'status'])
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent idle`)
     expect(text('help')).toBe('/help — List available commands')
+    expect(text('palette')).toBe(paletteTable(createPalette(true)))   // generated from the spec, never hand-typed
     agent.status = 'running'
     ctx.emit('agent/status', { agent, status: 'running' })
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent running`)
