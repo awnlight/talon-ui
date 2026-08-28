@@ -43,7 +43,7 @@ pnpm dsh plugin --profile talon add talon-ui
 pnpm dsh --profile talon
 ```
 
-`talon-ui@0.1.0` 已对 dsh `0.1.1-rc` 系列验证。
+`talon-ui@0.2.0` 已对 dsh `0.1.2-alpha.1` 系列验证。
 
 ### 从源码安装(开发)
 
