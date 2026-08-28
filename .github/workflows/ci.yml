@@ -1,0 +1,89 @@
+# talon's gate, on both platforms spec §8 T4 names.
+#
+# The suite reads dsh from a SIBLING CHECKOUT (`../deepseek-harness`) rather
+# than from npm — that is the project's ground-truth rule, and it is why this
+# workflow needs to be told where the harness lives. Set the repository
+# variable `HARNESS_REPO` (e.g. `your-org/deepseek-harness`) to enable the run;
+# without it the job reports that it is unconfigured and stops, rather than
+# failing red for a reason nobody can act on.
+#
+# The Windows leg is the one that closes T4's last acceptance line
+# ("Windows 快照稳定"): the goldens are byte-compared, so it proves the
+# `.gitattributes` LF pin and the path handling on a real Windows checkout.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check the harness location is configured
+        id: harness
+        shell: bash
+        run: |
+          if [ -z "${{ vars.HARNESS_REPO }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Set the HARNESS_REPO repository variable to run the gate — the suite resolves dsh from a sibling checkout."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.harness.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          path: talon-ui
+
+      # The sibling layout the tsconfig paths and the vitest aliases expect.
+      - if: steps.harness.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.HARNESS_REPO }}
+          ref: ${{ vars.HARNESS_REF || '' }}
+          token: ${{ secrets.HARNESS_TOKEN || github.token }}
+          path: deepseek-harness
+
+      - if: steps.harness.outputs.configured == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.harness.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19
+          cache: pnpm
+          cache-dependency-path: talon-ui/pnpm-lock.yaml
+
+      # The harness must be BUILT: talon's tsconfig resolves several dsh
+      # packages to their compiled declarations.
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile && pnpm run build:lib:host
+
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: talon-ui
+        run: pnpm install --frozen-lockfile
+
+      # Line endings first: on Windows this is the check that would otherwise
+      # fail every golden at once, and its message says so.
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: talon-ui
+        run: pnpm vitest run tests/windows.spec.ts
+
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: talon-ui
+        run: pnpm test
+
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: talon-ui
+        run: pnpm typecheck
+
+      - if: steps.harness.outputs.configured == 'true'
+        working-directory: talon-ui
+        run: pnpm build
