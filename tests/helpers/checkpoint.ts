@@ -14,6 +14,7 @@ export const CHECKPOINTS = [
   'context-card',
   'md-settled',
   'md-stream',
+  'card-terminal',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

@@ -11,6 +11,7 @@
  *   - the head is one row (truncated), every body row is wrapped — no rendered
  *     row may exceed the terminal width or TuiMainScreen crashes;
  *   - a failure shows its whole body; only successes fold. */
+import { homedir } from 'node:os'
 import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { displayText, type Palette } from '../../theme/palette.js'
 import { wrapPlain } from './cells.js'
@@ -43,18 +44,109 @@ export interface ToolCall { callId: string; name: string; args: unknown; rawArgu
 /** What the result half of a card knows (translate.ts flattens it). */
 export interface ToolResult { isError: boolean; errorCode: string | undefined; resultText: string; meta: unknown }
 
+/** What a class puts after `◇/◆ <name>` on the head. `key` is the class's
+ * 关键参数 (spec §4.2); `note` is the extra segment only bash carries (its
+ * `description`). Read at CALL time, so a pending card already says what it
+ * is doing. */
+export interface ToolHead { key?: string; note?: string }
+export type ToolHeadBuilder = (args: unknown) => ToolHead
+
 /** The per-class seam (ruling 4). A body builder is PURE and WIDTH-FREE: it
- * returns logical content lines, already displayText-escaped and toned; the
- * cell truncates/wraps them and folds the preview. Tasks 6–10 replace the
- * placeholder below one class at a time. */
-export type ToolBodyBuilder = (args: unknown, result: ToolResult, palette: Palette) => string[]
+ * returns logical content lines (ONE logical line per entry — the fold and the
+ * mount cap count entries), already displayText-escaped and toned. `failed`
+ * reports an outcome the tool itself did not flag, so the shared head tone and
+ * the failed-forces-expanded law stay in one place. */
+export interface ToolBody { lines: string[]; failed?: boolean }
+export type ToolBodyBuilder = (args: unknown, result: ToolResult, palette: Palette) => ToolBody
+
+/** Split, escape and dim one string into body entries. */
+function dimLines(text: string, palette: Palette): string[] {
+  return displayText(text).split('\n').map((line) => palette.dim(line))
+}
+
+/** A named string argument, absent when the model sent something else. */
+function stringArg(args: unknown, name: string): string | undefined {
+  const value = (args as Record<string, unknown> | undefined)?.[name]
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/** Every class without a head of its own: the first non-empty string the model
+ * passed (the `generic` rule, spec §4.2). */
+const defaultHead: ToolHeadBuilder = (args) => {
+  for (const value of Object.values(args ?? {})) if (typeof value === 'string' && value !== '') return { key: value }
+  return {}
+}
 
 /** Until each class lands: the flattened result text, dim, one row per line. */
 const plainResultBody: ToolBodyBuilder = (_args, result, palette) =>
-  result.resultText === '' ? [] : displayText(result.resultText).split('\n').map((line) => palette.dim(line))
+  ({ lines: result.resultText === '' ? [] : dimLines(result.resultText, palette) })
+
+// ── terminal (bash, pwsh) ───────────────────────────────────────────────────
+// The durable terminal facts are the call arguments and the RENDERED result
+// text: `tool-bash` publishes no presentationMeta, and dsh states the contract
+// itself — "replay only retains the rendered content text, not the original
+// ShellRunResult, so terminal presentation must recover the exit pill here"
+// (dsh-shell/src/render.ts). Everything below reads those two.
+
+const BACKGROUND_START = /^started background job (.+)$/
+// The inverse of the markers `renderResult` appends, anchored exactly as dsh's
+// own parseExitStatus anchors them: a leading newline and the end of the
+// string, so ordinary output that merely looks like a marker is left alone.
+const SIGNAL_MARKER = /\n\[killed by signal: ([^\]\n]+)\]$/
+const EXIT_MARKER = /\n\[exit code: (\d+)\]$/
+
+/** Recover the exit status and strip the marker it came from — a badge the
+ * card renders ONCE (leaving the marker in the body would show it twice). */
+function splitExitStatus(text: string): { body: string; badge: string | undefined } {
+  const signal = SIGNAL_MARKER.exec(text)
+  if (signal) return { body: text.slice(0, signal.index), badge: `[signal ${signal[1]}]` }
+  const exit = EXIT_MARKER.exec(text)
+  if (exit) return { body: text.slice(0, exit.index), badge: `[exit ${exit[1]}]` }
+  return { body: text, badge: undefined }   // dsh emits no marker for a clean exit 0
+}
+
+/** `~`-abbreviate the home prefix, the way every shell prompt does. */
+function abbreviateHome(path: string): string {
+  const home = homedir()
+  if (path === home) return '~'
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
+}
+
+const terminalHead: ToolHeadBuilder = (args) => ({ key: stringArg(args, 'command'), note: stringArg(args, 'description') })
+
+const terminalBody: ToolBodyBuilder = (args, result, palette) => {
+  // The cwd the command actually ran in: its own workdir, else the session
+  // workspace — which talon chdir's into on resume, so process.cwd() IS it.
+  const cwd = stringArg(args, 'workdir') ?? process.cwd()
+  const lead = [
+    ...dimLines(abbreviateHome(cwd), palette),
+    ...dimLines(`$ ${stringArg(args, 'command') ?? ''}`, palette),
+  ]
+  // A flagged failure is a harness error (abort, spawn failure), not a shell
+  // exit: dsh's own presenter skips the marker parse for it, and so do we.
+  if (result.isError) return { lines: [...lead, ...dimLines(result.resultText, palette)] }
+  const background = BACKGROUND_START.exec(result.resultText)
+  if (background) return { lines: [...lead, palette.dim(`└ background job ${displayText(background[1]!)}`)] }
+  const { body, badge } = splitExitStatus(result.resultText)
+  const output = body.replace(/\n+$/, '')     // the captured stream's trailing newline is not a body row
+  return {
+    lines: [...lead, ...(output === '' ? [] : dimLines(output, palette)), ...(badge === undefined ? [] : [palette.dim(displayText(badge))])],
+    failed: badge !== undefined,              // a non-zero exit or a signal colors the head, D12
+  }
+}
+
+export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHeadBuilder> = {
+  terminal: terminalHead,
+  diff: defaultHead,
+  read: defaultHead,
+  search: defaultHead,
+  web: defaultHead,
+  generic: defaultHead,
+  unregistered: defaultHead,
+}
 
 export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBodyBuilder> = {
-  terminal: plainResultBody,
+  terminal: terminalBody,
   diff: plainResultBody,
   read: plainResultBody,
   search: plainResultBody,
@@ -84,14 +176,7 @@ export function foldPreview(body: string[], palette: Palette): string[] {
 
 /** The bash `command` argument — what an approval prompt previews (spec D9). */
 export function commandArg(args: unknown): string | undefined {
-  const command = (args as { command?: unknown } | undefined)?.command
-  return typeof command === 'string' ? command : undefined
-}
-
-/** The head's key argument: the first non-empty string the model passed. */
-function keyArg(args: unknown): string | undefined {
-  for (const value of Object.values(args ?? {})) if (typeof value === 'string' && value !== '') return value
-  return undefined
+  return stringArg(args, 'command')
 }
 
 /** Escaped, and cut to its first logical line: the head is always ONE row, and
@@ -102,6 +187,10 @@ function oneLine(text: string): string {
 
 export class ToolCardCell implements Component {
   private result: ToolResult | undefined
+  // A failure by either route — the tool flagged it, or the class read one out
+  // of the result (a non-zero shell exit). Drives the head tone AND the
+  // failed-forces-expanded law, so both can never disagree.
+  private failed = false
   // The body as it currently presents: the running line while pending, the
   // built (and, for a success, folded) body once settled. Held pre-wrap so
   // contentLineCount() stays width-free for the O(1) mount-cap accounting.
@@ -123,7 +212,8 @@ export class ToolCardCell implements Component {
   settle(result: ToolResult): void {
     this.result = result
     const body = TOOL_BODY_BUILDERS[classifyTool(this.call.name)](this.call.args, result, this.palette)
-    this.presented = result.isError ? body : foldPreview(body, this.palette)
+    this.failed = result.isError || body.failed === true
+    this.presented = this.failed ? body.lines : foldPreview(body.lines, this.palette)
     this.cache = undefined
   }
 
@@ -141,9 +231,12 @@ export class ToolCardCell implements Component {
   }
 
   private head(): string {
-    const tone = this.result === undefined ? this.palette.warning : this.result.isError ? this.palette.error : this.palette.success
+    const tone = this.result === undefined ? this.palette.warning : this.failed ? this.palette.error : this.palette.success
     const glyph = this.result === undefined ? PENDING_GLYPH : SETTLED_GLYPH
-    const key = keyArg(this.call.args)
-    return tone(`${glyph} ${oneLine(this.call.name)}${key === undefined ? '' : ` · ${oneLine(key)}`}`)
+    const { key, note } = TOOL_HEAD_BUILDERS[classifyTool(this.call.name)](this.call.args)
+    const parts = [`${glyph} ${oneLine(this.call.name)}`]
+    if (key !== undefined) parts.push(oneLine(key))
+    if (note !== undefined) parts.push(oneLine(note))
+    return tone(parts.join(' · '))
   }
 }

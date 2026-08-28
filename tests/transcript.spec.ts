@@ -178,7 +178,7 @@ describe('Transcript tool cards (keyed by callId, ruling 5)', () => {
     expect(accounted(t)).toBe(registered(t))
     t.apply(result('c1', { resultText: 'a\nb\nc' }))
     expect(accounted(t)).toBe(registered(t))
-    expect(accounted(t)).toBe(2 + 1 + 4)                   // user cell + spacer + (head + 3 body lines)
+    expect(accounted(t)).toBe(2 + 1 + 6)                   // user cell + spacer + (head + cwd + $ command + 3 output lines)
   })
 
   it('forgets a pending card the mount cap evicted, so its late result lands as an orphan', () => {

@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -293,6 +293,38 @@ describe('talon snapshots', () => {
     ] } } })
     ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
     await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('card-terminal', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    // The cards render the cwd the command ran in (tool-cards.ts): freeze it so
+    // the committed golden does not embed this checkout's absolute path.
+    vi.spyOn(process, 'cwd').mockReturnValue('/workspace/talon-ui')
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 22)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // All three terminal-card tones in one frame (Task 6): a clean run in
+    // success, a non-zero exit the tool did NOT flag as an error yet the card
+    // colors red and refuses to fold, and a call still running in warning.
+    // Every result string is shaped exactly as dsh's `renderResult` emits it.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Run the checks.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{"command":"pnpm test","description":"Run the test suite"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '12 passed\n0 failed\n' }] }] } } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 2, callId: 'c2', name: 'bash', arguments: '{"command":"pnpm typecheck","description":"Check the types","workdir":"/workspace/talon-ui/src"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'src/a.ts(4,7): error TS2304: cannot find name\n[exit code: 2]' }] }] } } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 3, callId: 'c3', name: 'bash', arguments: '{"command":"pnpm build","description":"Build the bundle"}' } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-terminal', terminal)
+
     await controller.dispose()
   })
 
