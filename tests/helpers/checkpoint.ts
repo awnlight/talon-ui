@@ -18,6 +18,7 @@ export const CHECKPOINTS = [
   'card-diff',
   'card-read',
   'card-search',
+  'card-generic',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

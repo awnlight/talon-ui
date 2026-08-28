@@ -12,10 +12,11 @@
  *     row may exceed the terminal width or TuiMainScreen crashes;
  *   - a failure shows its whole body; only successes fold. */
 import { homedir } from 'node:os'
-import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
+import { Markdown, truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { displayText, type Palette } from '../../theme/palette.js'
 import { wrapPlain } from './cells.js'
 import { highlightToAnsi } from '../../theme/highlight.js'
+import { markdownTheme } from '../../theme/markdown-theme.js'
 import { diffsFromMeta, renderFileDiffs, type FileDiff } from './diff-render.js'
 
 export type ToolCardClass = 'terminal' | 'diff' | 'read' | 'search' | 'web' | 'generic'
@@ -58,7 +59,14 @@ export type ToolHeadBuilder = (call: ToolCall) => ToolHead
  * mount cap count entries), already displayText-escaped and toned. `failed`
  * reports an outcome the tool itself did not flag, so the shared head tone and
  * the failed-forces-expanded law stay in one place. */
-export interface ToolBody { lines: string[]; failed?: boolean }
+export interface ToolBody {
+  lines: string[]
+  failed?: boolean
+  /** A body that is PROSE, not rows: the cell renders it through the shared
+   * Markdown theme and folds the RESULT (spec §4.2 — cut visible rows, never
+   * source lines, which is what makes a fenced block fold correctly). */
+  markdown?: string
+}
 export type ToolBodyBuilder = (call: ToolCall, result: ToolResult, palette: Palette) => ToolBody
 
 /** Split, escape and dim one string into body entries. */
@@ -79,7 +87,10 @@ const defaultHead: ToolHeadBuilder = (call) => {
   return {}
 }
 
-/** Until each class lands: the flattened result text, dim, one row per line. */
+/** The flattened result text, dim, one row per line: what an unregistered tool
+ * renders (until D13's XML tree lands) and what every class falls back to when
+ * a result carries no usable metadata — a replayed log that predates the
+ * projection, or a failure that produced no structure at all. */
 const plainResultBody: ToolBodyBuilder = (_call, result, palette) =>
   ({ lines: result.resultText === '' ? [] : dimLines(result.resultText, palette) })
 
@@ -283,12 +294,70 @@ const searchBody: ToolBodyBuilder = (call, result, palette) => {
   return { lines: [...lines, palette.dim(`└ ${summary}${meta.truncated ? ' · truncated' : ''}`)] }
 }
 
+// ── web (web_search, web_fetch) ─────────────────────────────────────────────
+// `web_search` projects its sources, `web_fetch` its url + status (tool-web
+// search.ts:154 / fetch.ts:374). The url is rendered as plain dim text rather
+// than an OSC 8 link: pi-tui's `getCapabilities()` derives hyperlink support
+// from the process environment, so linking here would make a committed golden
+// depend on whichever terminal ran the suite. Links wait for the capability
+// seam T4 introduces alongside images.
+
+interface WebSource { url: string; title?: string; snippet?: string; publishedAt?: string }
+type WebMeta =
+  | { kind: 'search'; sources: WebSource[]; truncated: boolean }
+  | { kind: 'fetch'; url: string; statusCode: number; truncated: boolean }
+
+function webMetaFrom(meta: unknown): WebMeta | undefined {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
+  const { sources, url, statusCode, truncated } = meta as Record<string, unknown>
+  if (typeof truncated !== 'boolean') return undefined
+  if (Array.isArray(sources)) return sources.every(isWebSource) ? { kind: 'search', sources, truncated } : undefined
+  if (typeof url === 'string' && typeof statusCode === 'number') return { kind: 'fetch', url, statusCode, truncated }
+  return undefined
+}
+
+function isWebSource(value: unknown): value is WebSource {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const { url, title, snippet, publishedAt } = value as Record<string, unknown>
+  return typeof url === 'string'
+    && (title === undefined || typeof title === 'string')
+    && (snippet === undefined || typeof snippet === 'string')
+    && (publishedAt === undefined || typeof publishedAt === 'string')
+}
+
+const webHead: ToolHeadBuilder = ({ args }) => {
+  const url = stringArg(args, 'url')
+  if (url !== undefined) return { key: url }
+  const queries = (args as { queries?: unknown } | undefined)?.queries
+  const first = Array.isArray(queries) ? queries.find((query) => typeof query === 'string' && query !== '') : undefined
+  return typeof first === 'string' ? { key: first } : {}
+}
+
+const webBody: ToolBodyBuilder = (call, result, palette) => {
+  if (result.isError) return plainResultBody(call, result, palette)
+  const meta = webMetaFrom(result.meta)
+  if (meta === undefined) return plainResultBody(call, result, palette)
+  const capped = meta.truncated ? ' · truncated' : ''
+  if (meta.kind === 'fetch') return { lines: [palette.dim(`${oneLine(meta.url)} · HTTP ${meta.statusCode}${capped}`)] }
+  const rows = meta.sources.flatMap((source) => source.title === undefined
+    ? [palette.text(oneLine(source.url))]
+    : [palette.text(oneLine(source.title)), palette.dim(`${BODY_INDENT}${oneLine(source.url)}`)])
+  return { lines: [...rows, palette.dim(`└ ${counted(meta.sources.length, 'source', 'sources')}${capped}`)] }
+}
+
+// ── generic ─────────────────────────────────────────────────────────────────
+// The curated tools whose results are PROSE. The body goes through the shared
+// Markdown theme and folds by rendered rows (spec §4.2).
+
+const genericBody: ToolBodyBuilder = (_call, result) =>
+  result.resultText === '' ? { lines: [] } : { lines: [], markdown: result.resultText }
+
 export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHeadBuilder> = {
   terminal: terminalHead,
   diff: diffHead,
   read: readHead,
   search: searchHead,
-  web: defaultHead,
+  web: webHead,
   generic: defaultHead,
   unregistered: defaultHead,
 }
@@ -298,8 +367,8 @@ export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBody
   diff: diffBody,
   read: readBody,
   search: searchBody,
-  web: plainResultBody,
-  generic: plainResultBody,
+  web: webBody,
+  generic: genericBody,
   unregistered: plainResultBody,
 }
 
@@ -344,6 +413,11 @@ export class ToolCardCell implements Component {
   // built (and, for a success, folded) body once settled. Held pre-wrap so
   // contentLineCount() stays width-free for the O(1) mount-cap accounting.
   private presented: string[]
+  // A prose body: ONE Markdown built at settle (§5.1 — never inside render),
+  // rendered at width and folded by its RESULTING rows. `mdSourceLines` keeps
+  // contentLineCount() width-free, the same law the streaming cell follows.
+  private md: Markdown | undefined
+  private mdSourceLines = 0
   private cache: { width: number; lines: string[] } | undefined
 
   constructor(private readonly call: ToolCall, private readonly palette: Palette) {
@@ -354,7 +428,7 @@ export class ToolCardCell implements Component {
   get callId(): string { return this.call.callId }
   isSettled(): boolean { return this.result !== undefined }
   /** Content lines (logical, pre-wrap) for the mount-cap accounting. */
-  contentLineCount(): number { return 1 + this.presented.length }
+  contentLineCount(): number { return 1 + this.presented.length + this.mdSourceLines }
 
   /** Mutate in place on tool/result: the head takes its settled glyph and
    * outcome tone, the body comes from this class's builder. */
@@ -363,6 +437,12 @@ export class ToolCardCell implements Component {
     const body = TOOL_BODY_BUILDERS[classifyTool(this.call.name)](this.call, result, this.palette)
     this.failed = result.isError || body.failed === true
     this.presented = this.failed ? body.lines : foldPreview(body.lines, this.palette)
+    if (body.markdown === undefined) { this.md = undefined; this.mdSourceLines = 0 }
+    else {
+      const source = displayText(body.markdown)     // escape BEFORE the parser sees it (D7.8 order)
+      this.md = new Markdown(source, 0, 0, markdownTheme(this.palette))
+      this.mdSourceLines = source.split('\n').length
+    }
     this.cache = undefined
   }
 
@@ -376,7 +456,13 @@ export class ToolCardCell implements Component {
 
   private renderLines(width: number): string[] {
     const safe = Math.max(1, width)
-    return [truncateToWidth(this.head(), safe, '…'), ...this.presented.flatMap((row) => wrapPlain(row, safe))]
+    const rows = [truncateToWidth(this.head(), safe, '…'), ...this.presented.flatMap((row) => wrapPlain(row, safe))]
+    if (this.md !== undefined) {
+      // Markdown wraps and pads its own rows to `safe` — never re-wrap them.
+      const prose = this.md.render(safe)
+      rows.push(...this.failed ? prose : foldPreview(prose, this.palette))
+    }
+    return rows
   }
 
   private head(): string {

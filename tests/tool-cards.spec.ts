@@ -11,10 +11,10 @@ const ok = (resultText: string): ToolResult => ({ isError: false, errorCode: und
 const failed = (resultText: string): ToolResult => ({ isError: true, errorCode: 'timeout', resultText, meta: undefined })
 const card = (name: string, args: unknown, palette = p): ToolCardCell =>
   new ToolCardCell({ callId: 'c1', name, args, rawArguments: JSON.stringify(args ?? null) }, palette)
-/** The shared-machinery tests ride a `generic`-class tool on purpose: they pin
- * the ONE class that owns the head, tone, fold and cache laws (ruling 4), so a
- * per-class builder landing later can never quietly move them. */
-const generic = (args: unknown, palette = p): ToolCardCell => card('skill', args, palette)
+/** The shared-machinery tests ride an UNREGISTERED tool on purpose: its body
+ * builder is the plain passthrough, so they pin the ONE class that owns the
+ * head, tone, fold and cache laws (ruling 4) and never a class's own shaping. */
+const plain = (args: unknown, palette = p): ToolCardCell => card('mcp__notes__list', args, palette)
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -76,25 +76,25 @@ describe('ToolCardCell lifecycle (pending → settle, spec §4.2 / ruling 4)', (
     expect(card('list_agents', undefined).render(80)[0]).toBe('◇ list_agents')
   })
   it('settles in place: same cell, ◆ head, success tone, dim body from the class builder', () => {
-    const cell = generic({ name: 'writing-plans' }, colored)
+    const cell = plain({ name: 'writing-plans' }, colored)
     cell.settle(ok('12 passed\n0 failed'))
     expect(cell.isSettled()).toBe(true)
-    expect(cell.render(80)).toEqual([colored.success('◆ skill · writing-plans'), colored.dim('12 passed'), colored.dim('0 failed')])
+    expect(cell.render(80)).toEqual([colored.success('◆ mcp__notes__list · writing-plans'), colored.dim('12 passed'), colored.dim('0 failed')])
     expect(cell.contentLineCount()).toBe(3)
   })
   it('settles a failure into the error tone', () => {
-    const cell = generic({ name: 'writing-plans' }, colored)
+    const cell = plain({ name: 'writing-plans' }, colored)
     cell.settle(failed('timed out'))
-    expect(cell.render(80)[0]).toBe(colored.error('◆ skill · writing-plans'))
+    expect(cell.render(80)[0]).toBe(colored.error('◆ mcp__notes__list · writing-plans'))
   })
   it('an empty result settles to a head-only card', () => {
-    const cell = card('todo_write', { todos: [] })
+    const cell = plain({})
     cell.settle(ok(''))
-    expect(cell.render(80)).toEqual(['◆ todo_write'])
+    expect(cell.render(80)).toEqual(['◆ mcp__notes__list'])
     expect(cell.contentLineCount()).toBe(1)
   })
   it('is uncached while pending and width-cached once settled (§5.1, the streaming precedent)', () => {
-    const cell = generic({ name: 'writing-plans' })
+    const cell = plain({ name: 'writing-plans' })
     expect(cell.render(80)).not.toBe(cell.render(80))     // live tail: recomputed every frame
     cell.settle(ok('a\nb'))
     const rows = cell.render(80)
@@ -106,12 +106,12 @@ describe('ToolCardCell lifecycle (pending → settle, spec §4.2 / ruling 4)', (
   })
   it('folds a long body in the collapsed default and lets a failure ignore the fold', () => {
     const body = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n')
-    const good = generic({ name: 'plans' })
+    const good = plain({ name: 'plans' })
     good.settle(ok(body))
-    expect(good.render(80)).toEqual(['◆ skill · plans', 'line 0', 'line 1', 'line 2', '… 4 more lines …', 'line 7', 'line 8', 'line 9'])
+    expect(good.render(80)).toEqual(['◆ mcp__notes__list · plans', 'line 0', 'line 1', 'line 2', '… 4 more lines …', 'line 7', 'line 8', 'line 9'])
     expect(good.contentLineCount()).toBe(8)
 
-    const bad = generic({ name: 'plans' })
+    const bad = plain({ name: 'plans' })
     bad.settle(failed(body))
     expect(bad.render(80).length).toBe(11)                // head + all ten lines: a failure always shows everything
     expect(bad.contentLineCount()).toBe(11)
@@ -124,26 +124,26 @@ describe('ToolCardCell display law (width-crash + D7.8)', () => {
     expect(cell.render(80)).toEqual(['◇ ba\\x1bsh · echo one', '└ running…'])
   })
   it('truncates the head and wraps the body so no row exceeds the width', () => {
-    const cell = generic({ name: 'run '.repeat(40).trim() })
+    const cell = plain({ name: 'run '.repeat(40).trim() })
     cell.settle(ok('output '.repeat(40).trim()))
     const rows = cell.render(24)
     for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(24)
     expect(rows[0]).toContain('…')                        // head truncated, never wrapped
   })
   it('neutralizes control characters in the result body', () => {
-    const cell = generic({ name: 'plans' })
+    const cell = plain({ name: 'plans' })
     cell.settle(ok('done\x1b]0;evil\x07'))
     expect(cell.render(80).join('\n')).toContain('done\\x1b]0;evil\\x07')
   })
   it('contentLineCount stays width-invariant', () => {
-    const cell = generic({ name: 'plans' })
+    const cell = plain({ name: 'plans' })
     cell.settle(ok('a very long line that certainly wraps at twenty columns\nb'))
     expect(cell.contentLineCount()).toBe(3)
     cell.render(20)
     expect(cell.contentLineCount()).toBe(3)
   })
   it('renders at width 1 without throwing', () => {
-    const cell = generic({ name: 'plans' })
+    const cell = plain({ name: 'plans' })
     cell.settle(ok('out'))
     expect(() => cell.render(1)).not.toThrow()
   })
@@ -526,5 +526,112 @@ describe('search card (grep/glob, spec §4.2 / D12)', () => {
     expect(rows[1]).toBe('a\\x1b[2J.ts')
     expect(rows[2]).toBe('  L1: hit\\x1b]0;evil\\x07')
     expect(cell.contentLineCount()).toBe(4)
+  })
+})
+
+describe('web + generic cards (spec §4.2 / D12)', () => {
+  const sources = (over: Record<string, unknown> = {}): ToolResult => ({
+    isError: false, errorCode: undefined, resultText: 'raw search text',
+    meta: { truncated: false, sources: [
+      { url: 'https://a.example/post', title: 'A post' },
+      { url: 'https://b.example/', title: 'B home', snippet: 'ignored here' },
+    ], ...over },
+  })
+
+  it('heads a search on its first query and a fetch on its url', () => {
+    expect(card('web_search', { queries: ['pi-tui hyperlinks', 'osc8'] }).render(80)[0]).toBe('◇ web_search · pi-tui hyperlinks')
+    expect(card('web_fetch', { url: 'https://a.example/' }).render(80)[0]).toBe('◇ web_fetch · https://a.example/')
+    expect(card('web_search', { queries: [] }).render(80)[0]).toBe('◇ web_search')
+    expect(card('web_search', { queries: 'nope' }).render(80)[0]).toBe('◇ web_search')
+  })
+
+  it('lists search sources as a title row over a dim url', () => {
+    const cell = card('web_search', { queries: ['q'] }, colored)
+    cell.settle(sources())
+    expect(cell.render(80)).toEqual([
+      colored.success('◆ web_search · q'),
+      'A post',
+      colored.dim('  https://a.example/post'),
+      'B home',
+      colored.dim('  https://b.example/'),
+      colored.dim('└ 2 sources'),
+    ])
+  })
+
+  it('falls back to the url as the row when a source carries no title, and reports capping', () => {
+    const cell = card('web_search', { queries: ['q'] })
+    cell.settle(sources({ truncated: true, sources: [{ url: 'https://a.example/' }] }))
+    expect(cell.render(80)).toEqual(['◆ web_search · q', 'https://a.example/', '└ 1 source · truncated'])
+  })
+
+  it('renders a fetch as one url · HTTP status line', () => {
+    const cell = card('web_fetch', { url: 'https://a.example/' })
+    cell.settle({ isError: false, errorCode: undefined, resultText: 'Fetched…', meta: { url: 'https://a.example/', statusCode: 200, truncated: false } })
+    expect(cell.render(80)).toEqual(['◆ web_fetch · https://a.example/', 'https://a.example/ · HTTP 200'])
+
+    const cut = card('web_fetch', { url: 'https://a.example/' })
+    cut.settle({ isError: false, errorCode: undefined, resultText: 'Fetched…', meta: { url: 'https://a.example/', statusCode: 404, truncated: true } })
+    expect(cut.render(80)[1]).toBe('https://a.example/ · HTTP 404 · truncated')
+  })
+
+  it('falls back to the raw text on malformed or absent web metadata', () => {
+    for (const meta of [undefined, { truncated: false }, { truncated: 'no', sources: [] },
+      { truncated: false, sources: [{ url: 1 }] }, { truncated: false, sources: [null] },
+      { truncated: false, sources: [{ url: 'u', title: 2 }] },
+      { truncated: false, sources: [{ url: 'u', snippet: 2 }] },
+      { truncated: false, sources: [{ url: 'u', publishedAt: 2 }] },
+      { truncated: false, url: 'u', statusCode: 'x' }, [], null, 'meta']) {
+      const cell = card('web_search', { queries: ['q'] })
+      cell.settle({ isError: false, errorCode: undefined, resultText: 'raw', meta })
+      expect(cell.render(80)).toEqual(['◆ web_search · q', 'raw'])
+    }
+    const broken = card('web_fetch', { url: 'u' }, colored)
+    broken.settle(failed('DNS failure'))
+    expect(broken.render(80)).toEqual([colored.error('◆ web_fetch · u'), colored.dim('DNS failure')])
+  })
+
+  it('escapes hostile source titles and urls (D7.8)', () => {
+    const cell = card('web_search', { queries: ['q'] })
+    cell.settle(sources({ sources: [{ url: 'https://a\x1b[2J/', title: 'T\x1b]0;evil\x07' }] }))
+    expect(cell.render(120).slice(1, 3)).toEqual(['T\\x1b]0;evil\\x07', '  https://a\\x1b[2J/'])
+  })
+
+  it('renders a generic body through the shared Markdown theme', () => {
+    const cell = card('skill', { name: 'writing-plans' }, colored)
+    cell.settle(ok('# Loaded\n\n- writing-plans'))
+    const rows = cell.render(40)
+    expect(rows[0]).toBe(colored.success('◆ skill · writing-plans'))
+    expect(rows.join('\n')).toContain('Loaded')
+    expect(rows.some((row) => row.includes('writing-plans'))).toBe(true)
+    for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(40)
+  })
+
+  it('folds a generic body by VISIBLE rows, not source lines (the old truncation fix)', () => {
+    // Three source lines that a fence expands into many more rendered rows:
+    // folding the SOURCE would show the whole block, folding the RENDER cuts it.
+    const source = ['```ts', ...Array.from({ length: 12 }, (_, i) => `const l${i} = ${i}`), '```'].join('\n')
+    const cell = card('skill', { name: 'x' })
+    cell.settle(ok(source))
+    const rows = cell.render(40)
+    expect(rows.length).toBe(1 + 7)                                   // head + six kept rows + the marker
+    expect(rows.some((row) => row.includes('more lines'))).toBe(true)
+    expect(cell.contentLineCount()).toBe(1 + source.split('\n').length) // the cap counts SOURCE lines, width-free
+  })
+
+  it('shows a failed generic body whole, and escapes controls before the parser', () => {
+    const cell = card('skill', { name: 'x' })
+    cell.settle(failed(Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n\n')))
+    expect(cell.render(40).some((row) => row.includes('more lines'))).toBe(false)
+
+    const hostile = card('skill', { name: 'x' })
+    hostile.settle(ok('before\x1b]0;evil\x07after'))
+    expect(hostile.render(60).join('')).toContain('\\x1b]0;evil\\x07')
+  })
+
+  it('leaves an empty generic result as a head-only card', () => {
+    const cell = card('todo_write', { todos: [] })
+    cell.settle(ok(''))
+    expect(cell.render(80)).toEqual(['◆ todo_write'])
+    expect(cell.contentLineCount()).toBe(1)
   })
 })

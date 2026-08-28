@@ -226,7 +226,13 @@ read: head `<path>:<offset>`; body = line-number column source excerpt from `met
 
 web: `web_search` → source list rows `title` + dim url (OSC8 via pi-tui `hyperlink` when `getCapabilities().hyperlinks`, plain otherwise — snapshots run plain); `web_fetch` (not composed today, render anyway) → single `url · HTTP <status>` line. generic: head `◇/◆ <name> · <first-string-arg>`; body = result content through the shared Markdown theme then truncated by VISIBLE lines (truncate rendered rows, not source lines — old fix, spec §4.2); raw `arguments` stay literal (dim, fenced) when expanded.
 
-- [ ] Steps: failing tests (search list; fetch line; generic markdown body visible-line truncation with a fence spanning the cut; args literal; ask_user_question/todo_write/subagent land generic per Ruling 1) → implement → checkpoint → gate. Commit: `feat: web + generic cards — sources with links, Markdown bodies truncated by visible lines (D12)`
+**Two deviations, both recorded rather than coded around:**
+1. **No OSC 8 links in T3.** pi-tui's `getCapabilities()` derives hyperlink support from the process ENVIRONMENT (`TERM_PROGRAM`, `KITTY_WINDOW_ID`, `TMUX`, … — terminal-image.js:34-89) and memoizes it, so the plan's "snapshots run plain" does not hold: a suite run from iTerm, VS Code or Ghostty would emit OSC 8 into the committed golden and CI would disagree with the developer's machine. talon has no capability seam to inject the answer through, and inventing one for two rows is not warranted — links wait for the capability seam **T4** introduces alongside images. The url renders as plain dim text meanwhile, which is the same fallback pi-tui itself takes on an unidentified terminal.
+2. **Raw `arguments` when expanded is Task 11's**, not this task's: there is no expanded mode until Ctrl+O exists, so the literal-args row lands with the mode that reveals it.
+
+The `markdown` body seam is what makes visible-line truncation real: the builder returns PROSE, the cell builds one `Markdown` at settle (§5.1) and folds the rows it renders at width, while `contentLineCount()` keeps counting SOURCE lines — the same width-free law `StreamingAssistantCell` follows.
+
+- [x] Steps: failing tests (search list; fetch line; generic markdown body visible-line truncation with a fence spanning the cut; args literal; ask_user_question/todo_write/subagent land generic per Ruling 1) → implement → checkpoint → gate. Commit: `feat: web + generic cards — sources with links, Markdown bodies truncated by visible lines (D12)`
 
 ### Task 10: unregistered-tool XML fallback (D13)
 

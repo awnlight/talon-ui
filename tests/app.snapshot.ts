@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -437,6 +437,33 @@ describe('talon snapshots', () => {
     })
     await terminal.waitForFrame(before)
     await checkpoint('card-search', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-generic', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The web rows (a source list over dim urls) and a generic body rendered
+    // through the shared Markdown theme — heading, bullets, a highlighted
+    // fence — folded by VISIBLE rows.
+    send('user/message', { content: [{ type: 'text', text: 'What changed upstream?' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'web_search', arguments: '{"queries":["pi-tui release notes"]}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'two results' }] }] },
+      meta: { truncated: false, sources: [
+        { url: 'https://pi-tui.example/releases/0.84.1', title: 'pi-tui 0.84.1' },
+        { url: 'https://pi-tui.example/blog', title: 'Release notes' },
+      ] },
+    })
+    send('tool/call', { turn: 1, step: 2, callId: 'c2', name: 'skill', arguments: '{"name":"writing-plans"}' })
+    send('tool/result', { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: '# writing-plans\n\n- state the goal\n- **verify** each step' }] }] } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-generic', terminal)
 
     await controller.dispose()
   })
