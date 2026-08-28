@@ -240,7 +240,9 @@ The `markdown` body seam is what makes visible-line truncation real: the builder
 
 `renderUnknownXml(text): string[] | undefined` — saxes strict parse into an indented element tree (dim tags, text content per displayText); **explicit refusal** on malformed input (the 11 malformed classes reduce to: parser error → `undefined` → caller falls back to plain dim text). Injected-context wrappers are NEVER XML-parsed — that path was settled in T2 (ContextCard) and stays upstream of cards.
 
-- [ ] Steps: failing tests (well-formed tree; malformed → undefined; hostile entities/control chars neutralized; unregistered tool name routes here) → implement → gate. Commit: `feat: unregistered-tool XML tree fallback via saxes, refusal-to-plain (D13)`
+**Verified at execution:** saxes neutralizes hostile controls on the *refusal* route, not the escaping one — a raw ESC is not a legal XML character ("disallowed character") and `&#27;` is not a legal character reference ("malformed character entity"), so both classes are refused outright and reach the screen through the plain fallback, which `displayText`-escapes. Only controls XML actually permits (TAB, CR) survive the parser, and `displayText` catches those. Both routes are pinned. `fragment: true` accepts multi-root tool output; zero elements is itself a refusal, so ordinary text output stays plain rather than rendering as an empty "tree". Indentation caps at 8 levels: a hostile document nests arbitrarily deep and rows indented past the width are unreadable either way. Closing tags are dropped — indentation carries the structure and talon's visual language is zero decoration.
+
+- [x] Steps: failing tests (well-formed tree; malformed → undefined; hostile entities/control chars neutralized; unregistered tool name routes here) → implement → gate. Commit: `feat: unregistered-tool XML tree fallback via saxes, refusal-to-plain (D13)`
 
 ### Task 11: Ctrl+O tri-state visibility cycling
 

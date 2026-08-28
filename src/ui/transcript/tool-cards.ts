@@ -18,6 +18,7 @@ import { wrapPlain } from './cells.js'
 import { highlightToAnsi } from '../../theme/highlight.js'
 import { markdownTheme } from '../../theme/markdown-theme.js'
 import { diffsFromMeta, renderFileDiffs, type FileDiff } from './diff-render.js'
+import { renderUnknownXml } from './unknown-xml.js'
 
 export type ToolCardClass = 'terminal' | 'diff' | 'read' | 'search' | 'web' | 'generic'
 
@@ -352,6 +353,15 @@ const webBody: ToolBodyBuilder = (call, result, palette) => {
 const genericBody: ToolBodyBuilder = (_call, result) =>
   result.resultText === '' ? { lines: [] } : { lines: [], markdown: result.resultText }
 
+// ── unregistered (D13) ──────────────────────────────────────────────────────
+// A tool talon knows nothing about: a REAL parser or an explicit refusal, never
+// a regex. Well-formed XML becomes a tree; anything else stays plain text.
+
+const unknownBody: ToolBodyBuilder = (call, result, palette) => {
+  const tree = renderUnknownXml(result.resultText, palette)
+  return tree === undefined ? plainResultBody(call, result, palette) : { lines: tree }
+}
+
 export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHeadBuilder> = {
   terminal: terminalHead,
   diff: diffHead,
@@ -369,7 +379,7 @@ export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBody
   search: searchBody,
   web: webBody,
   generic: genericBody,
-  unregistered: plainResultBody,
+  unregistered: unknownBody,
 }
 
 const BODY_INDENT = '  '

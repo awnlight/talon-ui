@@ -635,3 +635,27 @@ describe('web + generic cards (spec §4.2 / D12)', () => {
     expect(cell.contentLineCount()).toBe(1)
   })
 })
+
+describe('unregistered tool card (D13)', () => {
+  it('renders well-formed XML output as a tree', () => {
+    const cell = card('mcp__notion__search', { query: 'plans' })
+    cell.settle(ok('<results><page>Q3 plan</page></results>'))
+    expect(cell.render(80)).toEqual(['◆ mcp__notion__search · plans', '<results>', '  <page>', '    Q3 plan'])
+  })
+
+  it('refuses malformed XML back to plain dim text — the card never breaks', () => {
+    const cell = card('mcp__notion__search', { query: 'plans' }, colored)
+    cell.settle(ok('<results><page>Q3 plan</results>'))
+    expect(cell.render(80)).toEqual([colored.success('◆ mcp__notion__search · plans'), colored.dim('<results><page>Q3 plan</results>')])
+  })
+
+  it('leaves ordinary text alone and an empty result head-only', () => {
+    const text = card('mcp__x__y', undefined)
+    text.settle(ok('42 rows'))
+    expect(text.render(80)).toEqual(['◆ mcp__x__y', '42 rows'])
+
+    const empty = card('mcp__x__y', undefined)
+    empty.settle(ok(''))
+    expect(empty.render(80)).toEqual(['◆ mcp__x__y'])
+  })
+})
