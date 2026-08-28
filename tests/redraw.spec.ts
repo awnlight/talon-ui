@@ -96,14 +96,23 @@ function mount() {
     ctx, agent, terminal, palette: createPalette(false), exit: vi.fn(), userQuestions, commands,
     agents: { resume: async () => ({ agent: fakeAgent('resumed') }) },
     createRootAgent: async () => ({ agent: fakeAgent('fresh') }),
-    services: { sessions: { get: () => undefined }, llm: { listProviders: () => [] } },
+    services: {
+      sessions: { get: () => undefined },
+      llm: {
+        listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }],
+        listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }],
+        resolveModelInfo: async () => ({ context: { contextWindow: 64_000 } }),
+      },
+      subagents: { listDescendants: async () => [] },
+    },
+    modelSelection: { current: undefined },
   })
-  return { ctx, agent, terminal, userQuestions, controller }
+  return { ctx, agent, terminal, userQuestions, commands, controller }
 }
 
 describe('zero-scrollback-wipe gate (D10④)', () => {
   it('the full T2 interaction flow completes with zero ED3 wipes', async () => {
-    const { ctx, agent, terminal, userQuestions, controller } = mount()
+    const { ctx, agent, terminal, userQuestions, commands, controller } = mount()
     await terminal.waitForFrame(0)
 
     // Phase 1: user message → streaming deltas → settle → turn end.
@@ -147,6 +156,18 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
       terminal.input('\x0f')                                             // expanded → hidden → collapsed
       await terminal.waitForFrame(before)
       expect(terminal.snapshot(), expected).toContain(expected)
+    }
+
+    // Phase 1d: the two T4 selectors open and close over a live transcript —
+    // panels are the classic wipe trigger and these are the newest ones.
+    for (const command of ['model', 'agents'] as const) {
+      before = terminal.frames
+      void commands.execute(agent, `/${command}`, [], new AbortController().signal)
+      await terminal.waitForFrame(before)
+      await vi.waitFor(() => expect(terminal.snapshot()).toContain(command === 'model' ? 'type to filter' : 'esc close'))
+      before = terminal.frames
+      terminal.input('\x1b')
+      await terminal.waitForFrame(before)
     }
 
     // Phase 2: approval request → panel → answer '1' → audit pair.
