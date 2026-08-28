@@ -15,7 +15,9 @@ export interface LoggedSession {
 }
 
 export function readSessionLog(path: string): LoggedSession {
-  const lines = readFileSync(path, 'utf8').split('\n').filter((line) => line !== '')
+  // Split on either ending: `.gitattributes` pins the fixture to LF, and this
+  // is the second lock — a hand-edited or re-exported log must still parse.
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/u).filter((line) => line !== '')
   const [head, ...rest] = lines
   const header = JSON.parse(head!) as LoggedSession['header'] & { type?: string }
   if (header.type !== 'session') throw new Error(`${path}: line 0 is not a session header`)

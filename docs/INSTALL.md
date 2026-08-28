@@ -42,3 +42,17 @@ The spec's three snapshot modes map onto this as:
       #    sequence, then refresh the golden
 
   Read the harvested log before committing it: it contains the real prompts, file contents and command output of that session.
+
+
+## CI, and the Windows leg
+
+`.github/workflows/ci.yml` runs the same gate this repository runs locally — `pnpm test && pnpm typecheck && pnpm build` — on **ubuntu-latest and windows-latest**. The Windows leg is what closes spec §8 T4's last acceptance line ("Windows 快照稳定"): the terminal goldens are compared byte for byte, so only a real Windows checkout can prove the `.gitattributes` LF pin and the path handling hold there.
+
+It needs one piece of configuration, because the suite resolves dsh from a **sibling checkout** rather than from npm:
+
+- repository variable `HARNESS_REPO` — where `deepseek-harness` lives (e.g. `your-org/deepseek-harness`);
+- optionally `HARNESS_REF` to pin a revision, and the secret `HARNESS_TOKEN` when that repository is private.
+
+Without `HARNESS_REPO` the job reports that it is unconfigured and stops, rather than failing red for a reason nobody can act on.
+
+`tests/windows.spec.ts` runs first and on every platform: it asserts that no committed golden or fixture carries a CR, that `.gitattributes` pins the endings, and that the recorded-session reader survives CRLF regardless — so the failure mode a Windows checkout introduces is caught by its own named test instead of surfacing as twenty unrelated snapshot mismatches.

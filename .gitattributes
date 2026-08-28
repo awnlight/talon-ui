@@ -1,0 +1,17 @@
+# Line endings are load-bearing here, not cosmetic.
+#
+# Every terminal golden under tests/snapshots and tests/replay is compared
+# BYTE-for-byte against a rendered frame, and the recorded session fixture is
+# parsed line by line. A Windows checkout with the default `core.autocrlf=true`
+# would rewrite all of them to CRLF, and the whole snapshot suite would fail on
+# Windows for a reason that has nothing to do with talon's rendering — which is
+# exactly the "Windows 快照稳定" acceptance line (spec §8 T4).
+#
+# So: everything textual is normalized to LF in the repository AND checked out
+# as LF on every platform. `tests/windows.spec.ts` asserts the result, so a file
+# that slips through fails loudly instead of only on someone else's machine.
+* text=auto eol=lf
+
+# Belt and braces for the two families the snapshots actually depend on.
+*.expected.txt text eol=lf
+*.jsonl        text eol=lf
