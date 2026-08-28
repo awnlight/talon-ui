@@ -8,6 +8,7 @@ import type { Palette } from '../../theme/palette.js'
 import { ApprovalAuditCell, ContextCardCell, NoticeCell, SpacerCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
 import { ORPHAN_CARD_NAME, ToolCardCell, type CardVisibility } from './tool-cards.js'
+import { WorkflowCardCell } from './workflow-card.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
 /** The permanent compaction bookmark (spec §4.1). The shadowed history stays
@@ -53,6 +54,9 @@ export class Transcript {
   // when the mount cap evicts its card — any later result then appends an
   // orphan card rather than settling something unmounted.
   private readonly pendingCards = new Map<string, ToolCardCell>()
+  // Workflow cards by runId (spec §3.9): the three later records mutate the
+  // card the run-start opened, exactly as a tool result settles its call.
+  private readonly workflowCards = new Map<string, WorkflowCardCell>()
 
   constructor(private readonly palette: Palette, options?: { mountCapLines?: number }) {
     this.cap = options?.mountCapLines ?? 5000
@@ -135,7 +139,27 @@ export class Transcript {
         { const c = new NoticeCell({ text: COMPACTION_MARKER, tone: 'info' }, this.palette); this.appendCell(c, c.contentLineCount()) }
         break
       case 'compaction-live':
-        break            // controller-owned live state (ruling 7): never a cell
+      case 'session-title':
+        break            // controller-owned live state: never a cell
+      case 'workflow-run-start': {
+        const card = new WorkflowCardCell(event.runId, event.name, this.palette)
+        this.workflowCards.set(event.runId, card)
+        this.appendCell(card, card.contentLineCount())
+        break
+      }
+      case 'workflow-agent-start': case 'workflow-agent-end': case 'workflow-run-end': {
+        // A record whose run-start never landed (a trimmed head, a truncated
+        // log) has no card to mutate; dropping it is right — the run it
+        // belonged to is not on screen either.
+        const card = this.workflowCards.get(event.runId)
+        if (card === undefined) break
+        const before = card.contentLineCount()
+        if (event.kind === 'workflow-agent-start') card.startMember(event.seq, event.label, event.phase)
+        else if (event.kind === 'workflow-agent-end') card.endMember(event.seq, event.outcome)
+        else { card.settle(event.stopReason); this.workflowCards.delete(event.runId) }
+        this.mountedLineCount += card.contentLineCount() - before
+        break
+      }
       case 'retry-notice': {
         // The request failed, so the text it had begun to deliver never
         // happened: withdraw it, then say why (spec §4.1).
@@ -296,6 +320,7 @@ export class Transcript {
       if (!first) break
       this.container.removeChild(first)
       if (first instanceof ToolCardCell) this.pendingCards.delete(first.callId)
+      if (first instanceof WorkflowCardCell) this.workflowCards.delete(first.runId)
       if (first === this.headerOwner) { this.headerOwner = undefined; this.headerTurn = undefined }
       this.mountedLineCount -= this.lineCountOf(first)
       if (!this.marker) {
@@ -308,7 +333,7 @@ export class Transcript {
 
   private lineCountOf(c: Component): number {
     if (c instanceof StreamingAssistantCell) return c.lineCount()
-    if (c instanceof ToolCardCell || c instanceof ContextCardCell) return c.contentLineCount()
+    if (c instanceof ToolCardCell || c instanceof ContextCardCell || c instanceof WorkflowCardCell) return c.contentLineCount()
     if (c instanceof UserMessageCell || c instanceof NoticeCell) return c.contentLineCount()
     if (c instanceof SpacerCell) return c.contentLineCount()
     return 1 // ApprovalAuditCell and the trim marker are one line each

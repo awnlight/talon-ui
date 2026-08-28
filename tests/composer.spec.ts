@@ -3,7 +3,7 @@ import { Editor, TuiMainScreen } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette } from '../src/theme/palette.ts'
 import { Composer } from '../src/ui/composer/composer.ts'
-import { createSlashProvider } from '../src/ui/composer/slash-provider.ts'
+import { createCompletionProvider } from '../src/ui/composer/completion.ts'
 
 function setup() {
   const term = new HeadlessTerminal(60, 12)
@@ -19,10 +19,10 @@ function setup() {
  * nudge's whole observable job is to make pi-tui ask the closure again. */
 function countingProvider(names: string[]) {
   const state = { queries: 0 }
-  const provider = createSlashProvider(() => {
+  const provider = createCompletionProvider({ commands: () => {
     state.queries += 1
     return names.map((name) => ({ name, description: `the ${name} command` }))
-  })
+  } })
   return { provider, state }
 }
 
@@ -161,7 +161,7 @@ describe('Composer', () => {
     const { term, tui, composer } = setup()
     const names = ['compact', 'exit', 'feedback', 'goal', 'help', 'permission'] // name-sorted, as commands.list() answers
     const { provider } = countingProvider(names)
-    composer.attachSlashCompletion(provider)
+    composer.attachCompletion(provider)
     tui.start()
     await term.waitForFrame(0)
     term.input('/')
@@ -172,11 +172,11 @@ describe('Composer', () => {
     expect(rows.at(-1)!.trimEnd()).toBe('  \x1b[2;39m  (1/6)\x1b[22;39m')  // shifted under the prompt column
     tui.stop()
   })
-  it('attachSlashCompletion drives the menu, refreshCompletion re-queries it in place', async () => {
+  it('attachCompletion drives the menu, refreshCompletion re-queries it in place', async () => {
     const { term, tui, composer } = setup()
     const names = ['help']
     const { provider, state } = countingProvider(names)
-    composer.attachSlashCompletion(provider)
+    composer.attachCompletion(provider)
     tui.start()
     await term.waitForFrame(0)
     term.input('/')
@@ -199,7 +199,7 @@ describe('Composer', () => {
     const { term, tui, composer } = setup()
     const names = ['help']
     const { provider, state } = countingProvider(names)
-    composer.attachSlashCompletion(provider)
+    composer.attachCompletion(provider)
     tui.start()
     await term.waitForFrame(0)
     term.input('/')
@@ -221,9 +221,25 @@ describe('Composer', () => {
   it('refreshCompletion does nothing while no menu is showing', async () => {
     const { composer } = setup()
     const { provider, state } = countingProvider(['help'])
-    composer.attachSlashCompletion(provider)
+    composer.attachCompletion(provider)
     composer.refreshCompletion()
     await new Promise((r) => setTimeout(r, 20))
     expect(state.queries).toBe(0)
+  })
+})
+
+describe('bracketed paste (spec §8 T4 — pi-tui already expands markers at submit)', () => {
+  it('submits the FULL pasted content, not the fold marker the editor shows while editing', async () => {
+    const { term, tui, composer } = setup()
+    const got: string[] = []
+    composer.onSubmit = (text) => got.push(text)
+    tui.start()
+    await term.waitForFrame(0)
+    // A real bracketed paste: ESC[200~ … ESC[201~ around multi-line content.
+    const pasted = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+    term.input(`\x1b[200~${pasted}\x1b[201~`)
+    term.input('\r')
+    tui.stop()
+    expect(got).toEqual([pasted])
   })
 })

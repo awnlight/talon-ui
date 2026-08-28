@@ -42,6 +42,17 @@
     - id: tool-ask-user
       name: '@deepseek-ai/dsh-tool-ask-user'
 
+    # `@file` completion needs `ctx.fileReferences`, and dsh-base does not
+    # compose it (verified: no file-reference row in
+    # packages/bundle/base/cordis.patch.yml — the web app supplies its own).
+    # The service owns the bounded workspace traversal, the tool-result
+    # invalidation and the quote grammar the spec asks talon to reproduce, so
+    # talon composes the row and consumes them rather than copying four
+    # behaviours into a second implementation. Defaults are the package's own
+    # (20 results, 10000 entries, .git/node_modules excluded).
+    - id: file-reference
+      name: '@deepseek-ai/dsh-file-reference-local'
+
     # sessionId pairing law (T2 carryover 2): set `sessionId` on BOTH rows or
     # NEITHER. talon-boot mints a fresh UUID when unset and talon-ui binds the
     # first root agent, so the defaults compose — but a single-sided pin binds

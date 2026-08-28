@@ -1,4 +1,5 @@
 import type { UsageSample } from './metrics.js'
+import type { WorkflowMemberOutcome, WorkflowStopReason } from '../ui/transcript/workflow-card.js'
 /** Internal UI vocabulary. The UI state machine consumes ONLY this union;
  * dsh's event surface is translated at the contract boundary (spec D1). */
 export interface Notice { text: string; tone: 'info' | 'warning' | 'error' }
@@ -25,6 +26,14 @@ export type AppEvent =
   | { kind: 'request-context'; model: string; contextWindow: number | undefined }
   // The queued badge (spec §3.2): what the inbox spliced in or took away.
   | { kind: 'inbox-spliced'; inserted: number; removed: number; cancelled: boolean }
+  // The window title (spec §8 T4). Consumed by the controller ALONE — a title
+  // is a side effect on the terminal, never a transcript cell.
+  | { kind: 'session-title'; title: string }
+  // The durable workflow record (spec §3.9): four events, one card per runId.
+  | { kind: 'workflow-run-start'; runId: string; name: string }
+  | { kind: 'workflow-agent-start'; runId: string; seq: number; label: string; phase: string | undefined }
+  | { kind: 'workflow-agent-end'; runId: string; seq: number; outcome: WorkflowMemberOutcome }
+  | { kind: 'workflow-run-end'; runId: string; stopReason: WorkflowStopReason }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }

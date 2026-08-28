@@ -110,6 +110,8 @@ function setup(overrides: {
   createRootAgent?: ControllerDeps['createRootAgent']
   services?: Partial<ControllerDeps['services']>
   palette?: ControllerDeps['palette']
+  modelSelection?: ControllerDeps['modelSelection']
+  readClipboardImage?: ControllerDeps['readClipboardImage']
 } = {}) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
@@ -125,6 +127,8 @@ function setup(overrides: {
     agents: overrides.agents ?? session.agents,
     createRootAgent: overrides.createRootAgent ?? session.createRootAgent,
     services: { ...session.services, ...overrides.services },
+    ...overrides.modelSelection === undefined ? {} : { modelSelection: overrides.modelSelection },
+    ...overrides.readClipboardImage === undefined ? {} : { readClipboardImage: overrides.readClipboardImage },
   })
   return { ctx, agent, terminal, exit, controller, commands }
 }
@@ -518,6 +522,373 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('/agents lists the durable tree, and says so where subagents are not composed (spec §3.9)', async () => {
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      services: { subagents: { listDescendants: async () => [
+        { kind: 'child' as const, id: 's-1', depth: 1, activity: 'running' as const, mode: 'continuable' as const, label: 'reviewer' },
+        { kind: 'diagnostic' as const, id: 's-2', depth: 2, reason: 'corrupt' },
+      ] } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('agents')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('reviewer'))
+    expect(terminal.snapshot()).toContain('corrupt')
+    const before = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(before)
+    await controller.dispose()
+
+    const none = dispatchingCommandService()
+    const without = setup({ commands: none })
+    await without.terminal.waitForFrame(0)
+    none.handlers.get('agents')!()
+    await vi.waitFor(() => expect(without.terminal.snapshot()).toContain('not available in this composition'))
+    await without.controller.dispose()
+  })
+
+  it('/agents survives a listing that throws, and shows an empty tree', async () => {
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      services: { subagents: { listDescendants: async () => { throw new Error('store is gone') } } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('agents')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Could not list the subagents'))
+    expect(terminal.snapshot()).toContain('No subagents in this session.')
+    await controller.dispose()
+  })
+
+  it('counts LIVE subagents in the footer, floors at zero, and ignores another agent\'s children', async () => {
+    const { ctx, agent, terminal, controller } = setup({ cols: 120 })
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('subagent/start', {}, agent)
+    ctx.emit('subagent/start', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⚙ 2 agents')
+
+    before = terminal.frames
+    ctx.emit('subagent/end', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('⚙ 1 agent')
+
+    // Another agent's children — start and end alike — and one end too many:
+    // none of them can move this badge.
+    const other = fakeAgent('other')
+    ctx.emit('subagent/start', {}, other)
+    ctx.emit('subagent/end', {}, other)
+    before = terminal.frames
+    ctx.emit('subagent/end', {}, agent)
+    ctx.emit('subagent/end', {}, agent)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('agent')
+    await controller.dispose()
+  })
+
+  it('Ctrl+V attaches a clipboard image as a mention, and every failure leaves the composer alone', async () => {
+    const png = { mediaType: 'image/png' as const, data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }
+    const stored = setup({
+      readClipboardImage: async () => png,
+      services: { attachments: { saveImages: async () => [{ id: 'att-7' }] } },
+    })
+    await stored.terminal.waitForFrame(0)
+    let before = stored.terminal.frames
+    stored.terminal.input('\x16')
+    await stored.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(stored.terminal.snapshot()).toContain('@image:att-7'))
+    await stored.controller.dispose()
+
+    // No store composed: one dim line, and nothing typed. This one deliberately
+    // does NOT inject a reader — the real platform reader is wired but never
+    // called, because the missing store short-circuits before the clipboard.
+    const none = setup()
+    await none.terminal.waitForFrame(0)
+    before = none.terminal.frames
+    none.terminal.input('\x16')
+    await none.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(none.terminal.snapshot()).toContain('no attachment store'))
+    expect(none.terminal.snapshot()).not.toContain('@image:')
+    await none.controller.dispose()
+
+    // An image-free clipboard, and a store that refuses.
+    const empty = setup({ readClipboardImage: async () => undefined, services: { attachments: { saveImages: async () => [] } } })
+    await empty.terminal.waitForFrame(0)
+    before = empty.terminal.frames
+    empty.terminal.input('\x16')
+    await empty.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(empty.terminal.snapshot()).toContain('no image'))
+    await empty.controller.dispose()
+
+    const refusing = setup({
+      readClipboardImage: async () => png,
+      services: { attachments: { saveImages: async () => { throw new Error('image too large') } } },
+    })
+    await refusing.terminal.waitForFrame(0)
+    before = refusing.terminal.frames
+    refusing.terminal.input('\x16')
+    await refusing.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(refusing.terminal.snapshot()).toContain('image too large'))
+    await refusing.controller.dispose()
+  })
+
+  it('reads the notification preference from settings, and follows a committed change (spec §3.10)', async () => {
+    let observer: ((next: { notifications: boolean }) => void) | undefined
+    const settings = {
+      register: () => ({
+        get: () => ({ notifications: false }),
+        watch: (callback: (next: { notifications: boolean }) => void) => { observer = callback; return () => { observer = undefined } },
+        update: async () => {},
+      }),
+    }
+    const { ctx, agent, terminal, controller } = setup({ services: { settings } })
+    await terminal.waitForFrame(0)
+    const written: string[] = []
+    const realWrite = terminal.write.bind(terminal)
+    terminal.write = (data: string) => { written.push(data); realWrite(data) }
+    const notifications = (): number => written.filter((data) => data.includes('\x1b]9;')).length
+    const endTurn = (turn: number): void => ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
+
+    endTurn(1)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(notifications()).toBe(0)                      // the stored preference is off
+
+    observer!({ notifications: true })                   // …and a committed change applies live
+    endTurn(2)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(notifications()).toBe(1)
+    await controller.dispose()
+  })
+
+  it('notifies on turn end only while unfocused, and consumes the focus reports (spec §8 T4)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    // A completed turn renders nothing, so these phases settle on a tick
+    // rather than a frame — there is no frame to wait for.
+    const written: string[] = []
+    const realWrite = terminal.write.bind(terminal)
+    terminal.write = (data: string) => { written.push(data); realWrite(data) }
+    const notifications = (): number => written.filter((data) => data.includes('\x1b]9;')).length
+    const settle = async (): Promise<void> => { await new Promise((r) => setTimeout(r, 20)) }
+    const endTurn = (turn: number): void => ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
+
+    endTurn(1)
+    await settle()
+    expect(notifications()).toBe(1)                        // unfocused by default: the safe failure
+
+    terminal.input('\x1b[I')                               // focused
+    endTurn(2)
+    await settle()
+    expect(notifications()).toBe(1)
+    // A focus report is terminal state, not input: consumed, never typed.
+    expect(terminal.snapshot()).not.toContain('[I')
+
+    terminal.input('\x1b[O')                               // unfocused again
+    endTurn(3)
+    await settle()
+    expect(notifications()).toBe(2)
+    await controller.dispose()
+  })
+
+  it('sets the window title from session/title, sanitized, and restores it on dispose (spec §8 T4)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    expect(terminal.snapshot()).toContain('title "talon"')
+
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'session/title', data: { title: 'Fix the\nlogin \x1b]0;evil\x07flow', messageSeqs: [], source: { kind: 'llm' } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('title "Fix the login \\x1b]0;evil\\x07flow"')
+    // A title is a terminal side effect, never a rendered row: it appears in
+    // the snapshot's header and in no numbered row.
+    expect(terminal.snapshot()).not.toMatch(/^\d+\| ".*Fix the login/m)
+
+    // A rebind belongs to a new session, which names itself on its own title.
+    before = terminal.frames
+    controller.bindAgent(fakeAgent('s2') as never)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('title "talon"')
+
+    await controller.dispose()
+    expect(terminal.snapshot()).toContain('title "talon"')
+  })
+
+  it('@file completion asks the composed service, bound to the CURRENT agent (spec §8 T4)', async () => {
+    const asked: { agent: unknown; query: string }[] = []
+    const { terminal, controller } = setup({
+      services: { fileReferences: {
+        list: async (agent: unknown, query: string) => {
+          asked.push({ agent, query })
+          return [{ path: 'src/app/controller.ts', kind: 'file' as const }]
+        },
+      } },
+    })
+    await terminal.waitForFrame(0)
+    for (const key of '@src') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('src/app/controller.ts'))
+    expect(asked.at(-1)!.query).toBe('src')
+    await controller.dispose()
+  })
+
+  it('@@ lists sessions ONCE per interaction and rebuilds only after a rebind (spec §8 T4)', async () => {
+    let listings = 0
+    const records = [
+      { header: { id: 's-abc', createdAt: 1, cwd: process.cwd() }, live: false, persisted: true },
+      { header: { id: 's-def', createdAt: 2, cwd: process.cwd() }, live: false, persisted: true },
+    ]
+    const { terminal, controller } = setup({
+      services: { sessionQuery: {
+        listSessions: async () => { listings += 1; return records },
+        readSession: async (id: string) => records.find((r) => r.header.id === id),
+        readTitleSnapshots: async () => new Map(),
+      } as never },
+    })
+    await terminal.waitForFrame(0)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('s-abc'))
+    // pi-tui queried on every keystroke; the enumeration ran once.
+    expect(listings).toBe(1)
+
+    controller.bindAgent(fakeAgent('s2') as never)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await vi.waitFor(() => expect(listings).toBe(2))       // a rebind can change the set
+    await controller.dispose()
+  })
+
+  it('@@ is inert where no session query is mounted', async () => {
+    const { terminal, controller } = setup({ services: { sessionQuery: undefined } })
+    await terminal.waitForFrame(0)
+    for (const key of '@@s') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(terminal.snapshot()).toContain('@@s')
+    await controller.dispose()
+  })
+
+  it('@file is inert where no file-reference service is composed', async () => {
+    const { terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    for (const key of '@src') {
+      const before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(terminal.snapshot()).toContain('@src')          // typed text stands…
+    expect(terminal.snapshot()).not.toContain('controller.ts')  // …with no menu behind it
+    await controller.dispose()
+  })
+
+  it('/model picks a route whose effect lands on the NEXT step (spec §3.7)', async () => {
+    const selection: { current: { provider: string; model: string; reasoningEffort?: string } | undefined } = { current: { provider: 'deepseek', model: 'deepseek-chat' } }
+    const svc = dispatchingCommandService()
+    // Wide enough that the confirmation notice does not wrap mid-phrase.
+    const { terminal, controller } = setup({
+      cols: 120,
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: {
+        listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }],
+        listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }, { id: 'deepseek-reasoner', name: 'Reasoner' }],
+        resolveModelInfo: async (_p: string, model: string) => model === 'deepseek-reasoner'
+          ? { context: { contextWindow: 128_000 }, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } }
+          : { context: { contextWindow: 64_000 } },
+      } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Reasoner'))
+
+    // One settled frame per key — a panel must never race a frame in flight.
+    for (const key of ['\x1b[B', '\x1b[Z', '\r']) {
+      const before = terminal.frames
+      terminal.input(key)                                     // down · shift+tab · enter
+      await terminal.waitForFrame(before)
+    }
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'low' })
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('takes effect on the next step'))
+    await controller.dispose()
+  })
+
+  it('/model says so when the composition cannot switch, or the catalog will not answer', async () => {
+    const svc = dispatchingCommandService()
+    const noSelection = setup({ commands: svc })
+    await noSelection.terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(noSelection.terminal.snapshot()).toContain('not available in this composition'))
+    await noSelection.controller.dispose()
+
+    const broken = dispatchingCommandService()
+    const failing = setup({
+      commands: broken,
+      modelSelection: { current: undefined },
+      services: { llm: { listProviders: () => { throw new Error('catalog is down') }, listModels: async () => [], resolveModelInfo: async () => ({}) } },
+    })
+    await failing.terminal.waitForFrame(0)
+    broken.handlers.get('model')!()
+    await vi.waitFor(() => expect(failing.terminal.snapshot()).toContain('Could not read the model catalog'))
+    await failing.controller.dispose()
+  })
+
+  it('/model selects an effort-less route with NO effort key, and a cancel changes nothing', async () => {
+    const selection: { current: { provider: string; model: string; reasoningEffort?: string } | undefined } = { current: undefined }
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      cols: 120,
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: { listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }], listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }], resolveModelInfo: async () => ({}) } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Chat'))
+    let before = terminal.frames
+    terminal.input('\r')
+    await terminal.waitForFrame(before)
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })   // no reasoningEffort key at all
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('takes effect on the next step'))
+
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('type to filter'))
+    before = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(before)
+    expect(selection.current).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })
+    await controller.dispose()
+  })
+
+  it('a /model panel still open at dispose is force-closed, and picks nothing', async () => {
+    const selection = { current: undefined }
+    const svc = dispatchingCommandService()
+    const { terminal, controller } = setup({
+      commands: svc,
+      modelSelection: selection,
+      services: { llm: { listProviders: () => [{ id: 'deepseek', name: 'DeepSeek' }], listModels: async () => [{ id: 'deepseek-chat', name: 'Chat' }], resolveModelInfo: async () => ({}) } },
+    })
+    await terminal.waitForFrame(0)
+    svc.handlers.get('model')!()
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('Chat'))
+    await controller.dispose()                                   // disposeAll() takes the panel's forced outcome
+    expect(selection.current).toBeUndefined()
+  })
+
   it('Ctrl+O cycles card visibility transcript-wide: collapsed → expanded → hidden (spec §4.2)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)
@@ -698,7 +1069,7 @@ describe('controller', () => {
     const { ctx, agent, terminal, controller } = setup({ commands: { ...svc, list: () => [{ name: 'help', description: 'List available commands' }] } })
     const text = (name: string): string | undefined => (svc.handlers.get(name)!() as { text?: string }).text
     await terminal.waitForFrame(0)
-    expect([...svc.handlers.keys()].sort()).toEqual(['clear', 'exit', 'help', 'palette', 'quit', 'resume', 'status'])
+    expect([...svc.handlers.keys()].sort()).toEqual(['agents', 'clear', 'exit', 'help', 'model', 'palette', 'quit', 'resume', 'status'])
     expect(text('status')).toBe(`session main\nworkspace ${process.cwd()}\nagent idle`)
     expect(text('help')).toBe('/help — List available commands')
     expect(text('palette')).toBe(paletteTable(createPalette(true)))   // generated from the spec, never hand-typed

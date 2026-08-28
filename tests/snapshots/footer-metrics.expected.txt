@@ -1,5 +1,6 @@
 terminal 88x14 buffer=normal length=14 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
+title "talon"
 cursor hidden @6,2
 0| "You"
   style 0-2 bold underline

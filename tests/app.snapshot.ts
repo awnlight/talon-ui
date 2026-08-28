@@ -2,11 +2,13 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
 import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
+import { AgentsPanel } from '../src/ui/panels/agents-panel.ts'
+import { ModelPanel, type ModelPick } from '../src/ui/panels/model-panel.ts'
 import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics', 'model-selector', 'at-completion', 'agents-panel', 'card-workflow'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -588,6 +590,120 @@ describe('talon snapshots', () => {
     send('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{}, {}] })
     await terminal.waitForFrame(before)
     await checkpoint('footer-metrics', terminal)
+
+    await controller.dispose()
+  })
+
+  it('model-selector', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 18)
+    // Mounted through the controller's own PanelManager, like the resume
+    // selector's golden: the real focus and queue path, not a bare render().
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps,
+    })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    let panel: ModelPanel | undefined
+    const picked = controller.panels.enqueue<ModelPick | undefined>({
+      create: (finish) => (panel = new ModelPanel(finish, createPalette(true))),
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)   // the loading frame
+    panel!.setChoices([
+      { provider: 'deepseek', providerName: 'DeepSeek', model: 'deepseek-chat', name: 'Chat', description: 'fast general model', contextWindow: 64_000, efforts: [], defaultEffort: undefined, current: false },
+      { provider: 'deepseek', providerName: 'DeepSeek', model: 'deepseek-reasoner', name: 'Reasoner', description: undefined, contextWindow: 128_000, efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low', current: true },
+      { provider: 'local', providerName: 'local', model: 'my-own-build', name: 'my-own-build', description: undefined, contextWindow: undefined, efforts: [], defaultEffort: undefined, current: false },
+    ])
+    // setChoices paints nothing by itself (the resume selector's precedent):
+    // these keys are the nudge, and they park the highlight on the current
+    // route with its effort cycled one step on.
+    await type(terminal, ['\x1b[B', '\x1b[Z'])
+    await checkpoint('model-selector', terminal)
+
+    const after = terminal.frames
+    terminal.input('\x1b')                // esc on an empty query cancels
+    await expect(picked).resolves.toBeUndefined()
+    await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('at-completion', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 16)
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(),
+      ...sessionDeps,
+      services: {
+        ...sessionDeps.services,
+        // `@` reads the composed file-reference service; the paths below are
+        // exactly the shape it answers with (path + kind, never contents).
+        fileReferences: { list: async () => [
+          { path: 'src/app/controller.ts', kind: 'file' as const },
+          { path: 'src/ui', kind: 'directory' as const },
+          { path: 'docs/my plan.md', kind: 'file' as const },
+        ] },
+      },
+    })
+    await terminal.waitForFrame(0)
+    await type(terminal, [...'look at @src'])
+    await vi.waitFor(() => expect(terminal.snapshot()).toContain('controller.ts'))
+    await checkpoint('at-completion', terminal)
+
+    await controller.dispose()
+  })
+
+  it('agents-panel', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const terminal = new HeadlessTerminal(76, 16)
+    const controller = createController({
+      ctx: quietCtx(), agent: idleAgent(), terminal, palette: createPalette(true), exit: () => {},
+      userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps,
+    })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    let panel: AgentsPanel | undefined
+    void controller.panels.enqueue<undefined>({
+      create: (finish) => (panel = new AgentsPanel(() => finish(undefined), createPalette(true))),
+      forced: () => ({ outcome: undefined }),
+    })
+    await terminal.waitForFrame(before)
+    // The shape `listDescendants` answers with: an interpreted tree, including
+    // a diagnostic the panel shows dim rather than as an error.
+    panel!.setEntries([
+      { kind: 'child', id: 's-review', depth: 1, activity: 'running', mode: 'continuable', label: 'reviewer' },
+      { kind: 'child', id: 's-grep', depth: 2, activity: 'inactive', mode: 'one-shot', label: 'grep pass' },
+      { kind: 'diagnostic', id: 's-broken', depth: 2, reason: 'corrupt' },
+    ])
+    await type(terminal, ['x'])            // any key repaints; none of them close
+    await checkpoint('agents-panel', terminal)
+
+    const after = terminal.frames
+    terminal.input('\x1b')
+    await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('card-workflow', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The durable record, in the order a real run writes it: one run still in
+    // flight beneath one that already settled, so both tones are on screen.
+    send('user/message', { content: [{ type: 'text', text: 'Review the branch.' }], source: { kind: 'user' } })
+    send('tool-workflow/run-start', { runId: 'r1', name: 'review-changes' })
+    send('tool-workflow/agent-start', { runId: 'r1', seq: 1, label: 'review:bugs', phase: 'Review', childId: 'c1' })
+    send('tool-workflow/agent-start', { runId: 'r1', seq: 2, label: 'review:perf', phase: 'Review', childId: 'c2' })
+    send('tool-workflow/agent-end', { runId: 'r1', seq: 1, outcome: 'completed' })
+    send('tool-workflow/agent-end', { runId: 'r1', seq: 2, outcome: 'failed' })
+    send('tool-workflow/run-end', { runId: 'r1', stopReason: 'completed' })
+    send('tool-workflow/run-start', { runId: 'r2', name: 'verify-findings' })
+    send('tool-workflow/agent-start', { runId: 'r2', seq: 1, label: 'verify:a', phase: 'Verify', childId: 'c3' })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-workflow', terminal)
 
     await controller.dispose()
   })

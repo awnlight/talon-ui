@@ -2,7 +2,6 @@
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Container, matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import type { CommandDefinition, CommandDescriptor } from '@deepseek-ai/dsh-commands'
@@ -12,16 +11,24 @@ import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
 import { registerSessionCommands, registerTalonCommands } from '../backend/commands.js'
 import { Metrics } from '../backend/metrics.js'
+import { bindSettings, type SettingsServiceFacet } from '../backend/settings.js'
+import { readModelChoices, type LlmCatalog, type ModelTarget } from '../backend/models.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
 import { translateSessionEvent } from '../backend/translate.js'
 import { displayText, type Palette, paletteTable } from '../theme/palette.js'
 import { Composer, type GlyphPhase } from '../ui/composer/composer.js'
-import { createSlashProvider } from '../ui/composer/slash-provider.js'
+import { createCompletionProvider } from '../ui/composer/completion.js'
+import { pasteImage, readClipboardImage, type ClipboardImageReader } from '../ui/composer/paste.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
+import { AgentsPanel, type AgentEntry } from '../ui/panels/agents-panel.js'
+import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
+import { Notifier } from '../ui/notify.js'
+import { abbreviateHome } from '../ui/paths.js'
+import { DEFAULT_TITLE, TerminalTitle } from '../ui/terminal-title.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
@@ -89,9 +96,28 @@ export interface ControllerDeps {
       cachedSnapshot(header: SessionRecordLike['header']): { values: { title?: string | null } } | undefined
       coldSnapshot(id: string, signal?: AbortSignal): Promise<{ values: { title?: string | null } }>
     }
-    llm: { listProviders(): { id: string }[] }
+    /** The catalog `/model` reads (spec §3.7). `listProviders` alone is what
+     * the resume preflight needs; the two async members are optional so a
+     * composition without a model catalog still boots — `/model` then says so
+     * instead of throwing. */
+    llm: LlmCatalog
+    /** `@file` discovery (`ctx.fileReferences`). Absent in a composition
+     * without the row: `@` completion is then inert and nothing else changes. */
+    fileReferences?: { list(agent: unknown, query: string, signal: AbortSignal): Promise<readonly { path: string; kind: 'file' | 'directory' }[]> }
+    /** `ctx.attachments`. Absent: Ctrl+V says so and changes nothing. */
+    attachments?: { saveImages(inputs: readonly { mediaType: string; data: Uint8Array }[]): Promise<readonly { id: string }[]> }
+    /** `ctx.subagents`. Absent: `/agents` says so. */
+    subagents?: { listDescendants(rootSessionId: string, signal?: AbortSignal): Promise<readonly AgentEntry[]> }
+    /** `ctx.settings`. Absent: talon runs on its defaults, permanently. */
+    settings?: SettingsServiceFacet
   }
+  /** Installed once per bind so a pick takes effect on the NEXT step
+   * (`installModelSelection`'s own contract). Absent in tests that do not
+   * exercise `/model`. */
+  modelSelection?: { current: ModelTarget | undefined }
   exit(code: number): void
+  /** Overridden in tests; the default runs the platform clipboard command. */
+  readClipboardImage?: ClipboardImageReader
 }
 
 const HINT_IDLE = 'enter send · shift+enter newline · ctrl+c exit'
@@ -103,13 +129,6 @@ const GOODBYE = (sessionId: string): string => `To resume: dsh --profile talon, 
 const RESUME_RUNNING = 'Resume is not available while a turn is running.'
 /** The live compaction indicator (spec §4.1). */
 const COMPACTING = (seconds: number): string => `Context being compacted ${seconds}s`
-
-/** `~`-abbreviate the home prefix, exactly as the terminal card does. */
-function abbreviateHome(path: string): string {
-  const home = homedir()
-  if (path === home) return '~'
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
-}
 
 /** The current git branch, read ONCE per bind straight off `.git/HEAD` — no
  * watcher, no subprocess (spec §3.8). A detached HEAD, an unreadable file or
@@ -124,6 +143,27 @@ function gitBranch(cwd: string): string | undefined {
   }
 }
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
+const MODEL_UNAVAILABLE = 'Model switching is not available in this composition.'
+/** What an unfocused terminal is told when a turn finishes (spec §8 T4). */
+const TURN_DONE = 'talon: turn finished'
+/** One dim line per image paste that did not produce an attachment. */
+const PASTE_NOTICE: Record<'unavailable' | 'empty' | 'failed', (reason: string) => string> = {
+  unavailable: () => 'Image paste is not available: no attachment store is composed.',
+  empty: () => 'The clipboard holds no image.',
+  failed: (reason) => `Could not attach the pasted image: ${reason}`,
+}
+const MODEL_FAILED = 'Could not read the model catalog:'
+const AGENTS_UNAVAILABLE = 'Subagents are not available in this composition.'
+/** The schema `ctx.settings` renders and validates this namespace with. Kept
+ * as plain JSON Schema so talon needs no schemastery import (spec §3.10). */
+const TALON_SETTINGS_SCHEMA = {
+  type: 'object',
+  properties: {
+    scheme: { type: 'string', enum: ['dark', 'light'], default: 'dark', description: 'Which half of the ANSI-16 palette to resolve.' },
+    notifications: { type: 'boolean', default: true, description: 'Notify an unfocused terminal when a turn ends.' },
+  },
+} as const
+const AGENTS_FAILED = 'Could not list the subagents:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
 const WORKSPACE_UNSET = 'cwd unset'
@@ -191,6 +231,22 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       tui.requestRender()
     },
   })
+  // The window title (spec §8 T4): live state, written through the Terminal
+  // seam rather than rendered, and put back on teardown.
+  const title = new TerminalTitle(terminal)
+  title.reset()
+  // Turn-end notification while the terminal is unfocused (spec §8 T4). Focus
+  // is talon's own tracking: pi-tui has none.
+  const notifier = new Notifier(terminal)
+  notifier.start()
+  // Persisted PREFERENCE (spec §3.10) — never session UI state. A committed
+  // change, including one made by editing the document by hand, applies here.
+  const settings = bindSettings(deps.services.settings, TALON_SETTINGS_SCHEMA, (next) => {
+    notifier.setEnabled(next.notifications)
+    tui.requestRender()
+  })
+  notifier.setEnabled(settings.current().notifications)
+  let sessionName = DEFAULT_TITLE
   const hasPanel = (): boolean => panels.active !== undefined
   // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
   // end, and never reconstructed from replayed history.
@@ -201,10 +257,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   let workspace = process.cwd()
   let branch = gitBranch(workspace)
   let queued = 0
+  // Subagents running RIGHT NOW (spec §3.9): live dispatch only, so a replayed
+  // log can never invent one — the compaction-indicator law, applied again.
+  let liveAgents = 0
   let phase: GlyphPhase = 'idle'
   const syncFooter = (): void => {
     const view = metrics.read()
-    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued })
+    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued, agents: liveAgents })
   }
   const setPhase = (next: GlyphPhase): void => { phase = next; composer.setPhase(next) }
   const showCompaction = (): void => {
@@ -244,6 +303,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       }
       // The glyph reads the SAME live stream the transcript does (spec §4.3):
       // waiting on the model, thinking, answering, or running a tool.
+      if (appEvent.kind === 'session-title') { title.set(appEvent.title); sessionName = appEvent.title }
+      // Turn end, and only turn end: a notification per chunk would be noise.
+      if (appEvent.kind === 'turn-end') notifier.notify(`${TURN_DONE} · ${sessionName}`)
       if (appEvent.kind === 'step-start') setPhase('wait')
       if (appEvent.kind === 'turn-end') setPhase('idle')     // the prompt is back
       if (appEvent.kind === 'stream-delta') setPhase(appEvent.block === 'reasoning' ? 'thinking' : 'responding')
@@ -256,6 +318,22 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       transcript.apply(appEvent)
     }
     showCompaction()          // elapsed advances on the events that keep arriving
+    syncFooter()
+    tui.requestRender()
+  }))
+
+  // `subagent/start|end` are ctx events carrying the PARENT agent, so the
+  // filter is identity against the bound agent — the same shape every other
+  // per-agent listener uses.
+  detachers.push(ctx.on('subagent/start', (_info: unknown, parent: unknown) => {
+    if (parent !== bound || disposed) return
+    liveAgents += 1
+    syncFooter()
+    tui.requestRender()
+  }))
+  detachers.push(ctx.on('subagent/end', (_info: unknown, parent: unknown) => {
+    if (parent !== bound || disposed) return
+    liveAgents = Math.max(0, liveAgents - 1)     // a floor, like the queued badge
     syncFooter()
     tui.requestRender()
   }))
@@ -304,9 +382,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     // A rebind is a new session: fresh metrics, and the workspace it chdir'd
     // into, with its branch re-read once (spec §3.8).
     metrics = new Metrics()
+    sessionChoices = undefined      // a rebind can add or remove sessions
+    title.reset()                   // the new session names itself on its own session/title
+    sessionName = DEFAULT_TITLE
     workspace = process.cwd()
     branch = gitBranch(workspace)
     queued = 0
+    liveAgents = 0                  // the new session has its own children, if any
     setPhase(running ? 'wait' : 'idle')
     transcript = new Transcript(palette)
     transcriptSlot.clear()
@@ -492,6 +574,62 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     }
   }
 
+  /** `/model` (spec §3.7): the panel mounts in its own loading state and fills
+   * from the live catalog, exactly as the resume selector does. A pick writes
+   * the shared selection ref — `installModelSelection` makes the next step
+   * read it, so nothing here has to touch a request in flight. */
+  const openModel = (): void => {
+    const selection = deps.modelSelection
+    if (selection === undefined) { appendLocalNotice({ text: MODEL_UNAVAILABLE, tone: 'error' }); return }
+    let settle!: (picked: ModelPick | undefined) => void
+    const panel = new ModelPanel((picked) => settle(picked), palette)
+    const picked = panels.enqueue<ModelPick | undefined>({
+      create: (finish) => { settle = finish; return panel },
+      forced: () => ({ outcome: undefined }),
+    })
+    void (async () => {
+      try {
+        panel.setChoices(await readModelChoices(deps.services.llm, selection.current))
+        tui.requestRender()
+      } catch (cause) {
+        settle(undefined)
+        appendLocalNotice({ text: `${MODEL_FAILED} ${failureText(cause)}`, tone: 'error' })
+      }
+    })()
+    void picked.then((choice) => {
+      if (choice === undefined) return
+      selection.current = { provider: choice.provider, model: choice.model, ...choice.reasoningEffort === undefined ? {} : { reasoningEffort: choice.reasoningEffort } }
+      const effort = choice.reasoningEffort === undefined ? '' : ` · ${choice.reasoningEffort}`
+      appendLocalNotice({ text: `Model set to ${choice.provider}/${choice.model}${effort} — takes effect on the next step.`, tone: 'info' })
+      tui.requestRender()
+    })
+  }
+
+  /** `/agents` (spec §3.9): a read-only tree, filled from the durable listing
+   * the subagent service already interprets. */
+  const openAgents = (): void => {
+    const subagents = deps.services.subagents
+    if (subagents === undefined) { appendLocalNotice({ text: AGENTS_UNAVAILABLE, tone: 'error' }); return }
+    let settle!: () => void
+    const panel = new AgentsPanel(() => settle(), palette)
+    void panels.enqueue<undefined>({
+      create: (finish) => { settle = () => finish(undefined); return panel },
+      forced: () => ({ outcome: undefined }),
+    })
+    void (async () => {
+      try {
+        // The session id, not the agent id: `listDescendants` walks the
+        // durable session tree (`bound.id` IS that id — the agent is named
+        // after its session — but read it off the facet the same way).
+        panel.setEntries([...await subagents.listDescendants(bound.id)])
+      } catch (cause) {
+        appendLocalNotice({ text: `${AGENTS_FAILED} ${failureText(cause)}`, tone: 'error' })
+        panel.setEntries([])
+      }
+      tui.requestRender()
+    })()
+  }
+
   const openResume = (): void => {
     if (running) { appendLocalNotice({ text: RESUME_RUNNING, tone: 'warning' }); return }
     const query = deps.services.sessionQuery
@@ -538,15 +676,43 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     paletteTable: () => paletteTable(palette),
     list: () => deps.commands.list(bound),
   }))
-  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession }))
+  detachers.push(registerSessionCommands(deps.commands, { openResume, newSession, openModel, openAgents }))
 
   // Slash discovery: the provider reads the registry through this closure, so
   // it needs no rebuild when commands come and go (Ruling 4) — an already-open
   // menu just gets re-queried.
-  composer.attachSlashCompletion(createSlashProvider(() => deps.commands.list(bound)))
+  // One provider, three sources (T4 ruling 4): the command registry through a
+  // closure so `commands/change` needs no rebuild, and the file-reference
+  // service — when the composition has one — bound to the CURRENT agent, so a
+  // D8 rebind searches the workspace it moved to.
+  // `@@` enumerates sessions, which is real I/O, and pi-tui asks on EVERY
+  // keystroke — so the listing is built once per interaction and cached until
+  // a rebind, where the set can genuinely have changed (/clear, /resume).
+  let sessionChoices: Promise<{ id: string; title: string }[]> | undefined
+  const listSessionChoices = (): Promise<{ id: string; title: string }[]> => {
+    const query = deps.services.sessionQuery
+    /* v8 ignore next -- guarded by the caller: `sessions` answers undefined without a query service, so this cannot be reached */
+    if (query === undefined) return Promise.resolve([])
+    sessionChoices ??= buildResumeCandidates(candidateServices(query), { currentId: bound.id, cwd: process.cwd() })
+      .then((candidates) => candidates.map((candidate) => ({ id: candidate.id, title: candidate.title })))
+      .catch(() => [])
+    return sessionChoices
+  }
+  composer.attachCompletion(createCompletionProvider({
+    commands: () => deps.commands.list(bound),
+    files: () => {
+      const service = deps.services.fileReferences
+      return service === undefined ? undefined : (query, signal) => service.list(bound, query, signal)
+    },
+    sessions: () => deps.services.sessionQuery === undefined ? undefined : listSessionChoices,
+  }))
   detachers.push(ctx.on('commands/change', () => composer.refreshCompletion()))
 
   detachers.push(tui.addInputListener((data) => {
+    // Focus reports come first and unconditionally: they are terminal state,
+    // not user input, so a panel must not swallow them and the editor must
+    // never see them as text.
+    if (notifier.observe(data)) return { consume: true }
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
     if (matchesKey(data, 'ctrl+c')) {
       if (running) { bound.cancel({ kind: 'user' }); return { consume: true } }
@@ -580,6 +746,20 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       tui.requestRender()
       return { consume: true }
     }
+    if (matchesKey(data, 'ctrl+v')) {
+      // The clipboard lives outside the terminal, so this is asynchronous and
+      // every failure is ordinary: each one leaves the composer untouched.
+      void (async () => {
+        const outcome = await pasteImage({
+          read: deps.readClipboardImage ?? readClipboardImage,
+          ...deps.services.attachments === undefined ? {} : { save: (images) => deps.services.attachments!.saveImages(images) },
+        })
+        if (outcome.kind === 'stored') composer.editor.insertTextAtCursor(`${outcome.mention} `)
+        else appendLocalNotice({ text: PASTE_NOTICE[outcome.kind](outcome.kind === 'failed' ? outcome.reason : ''), tone: outcome.kind === 'failed' ? 'error' : 'info' })
+        tui.requestRender()
+      })()
+      return { consume: true }
+    }
     if (matchesKey(data, 'ctrl+d') && composer.editor.getText() === '') {
       if (!running) requestExit()
       // Running: flash the interrupt-first hint (spec §6, carryover 3); the
@@ -598,6 +778,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     for (const detach of detachers.splice(0)) detach()
     for (const run of commandRuns) if (run !== executingRun) run.abort()
     composer.dispose()          // the glyph timer never outlives the UI
+    settings.dispose()
+    notifier.stop()             // stop asking a terminal we are done with for focus
+    title.reset()               // a reused terminal must not keep advertising a session that ended
     panels.disposeAll()
     tui.stop()
   }

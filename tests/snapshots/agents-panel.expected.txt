@@ -1,0 +1,25 @@
+terminal 76x16 buffer=normal length=16 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+title "talon"
+cursor hidden @9,0
+0| <blank>
+1| "─ agents ───────────────────────────────────────────────────────────────────"
+  style 0-75 dim
+2| "◇ reviewer · continuable · s-review"
+  style 0-9 fg-3
+  style 10-34 dim
+3| "  ◆ grep pass · one-shot · s-grep"
+  style 2-12 fg-2
+  style 13-32 dim
+4| "  ◌ s-broken · corrupt"
+  style 0-21 dim
+5| "esc close"
+  style 0-8 dim
+6| "────────────────────────────────────────────────────────────────────────────"
+  style 0-75 fg-3
+7| "❯"
+  style 0-0 dim
+  style 2-2 inverse
+8| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+9-15| <blank>

@@ -38,6 +38,13 @@ const FORBIDDEN: [string, RegExp][] = [
   ['a C1 control', /[\x80-\x9f]/],
 ]
 
+/** The T4 completion and panel surfaces take the same corpus, through their
+ * own code paths rather than the session log. */
+const HOSTILE_FILES = [
+  { path: `src/${HOSTILE}.ts`, kind: 'file' as const },
+  { path: `${OVERSIZED}/deep`, kind: 'directory' as const },
+]
+
 function mount(rows = 40, cols = 100) {
   const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
   const ctx = {
@@ -50,10 +57,18 @@ function mount(rows = 40, cols = 100) {
   const controller = createController({
     ctx, agent, terminal, palette: createPalette(true), exit: () => {},
     userQuestions: { registerProvider: () => () => {} },
-    commands: { register: () => () => {}, list: () => [], execute: async () => undefined },
+    commands: { register: () => () => {}, list: () => [{ name: `cmd${HOSTILE}`, description: HOSTILE }], execute: async () => undefined },
     agents: { resume: async () => ({ agent: idle() }) },
     createRootAgent: async () => ({ agent: idle() }),
-    services: { sessions: { get: () => undefined }, llm: { listProviders: () => [] } },
+    services: {
+      sessions: { get: () => undefined },
+      llm: { listProviders: () => [] },
+      fileReferences: { list: async () => HOSTILE_FILES },
+      subagents: { listDescendants: async () => [
+        { kind: 'child' as const, id: HOSTILE, depth: 1, activity: 'running' as const, mode: 'continuable' as const, label: `${HOSTILE}${OVERSIZED}` },
+        { kind: 'diagnostic' as const, id: OVERSIZED, depth: 2, reason: HOSTILE },
+      ] },
+    },
   } as never)
   const send = (type: string, data: unknown) => ctx.emit('session/event', agent.session, { type, data })
   return { terminal, controller, send }
@@ -112,6 +127,14 @@ function hostileSession(send: (type: string, data: unknown) => void): void {
   send('tool/call', { turn: 1, step: 7, callId: 'x1', name: 'mcp__evil__run', arguments: JSON.stringify({ q: HOSTILE }) })
   send('tool/result', { turn: 1, step: 7, message: { content: [{ toolCallId: 'x1', content: [{ type: 'text', text: `<a><b attr="${HOSTILE}">${OVERSIZED}</a>` }] }] } })
 
+  // The T4 surfaces: a title derived from model output, and a workflow record
+  // whose every string came from a script talon did not write.
+  send('session/title', { title: `${HOSTILE}${OVERSIZED}`, messageSeqs: [], source: { kind: 'llm' } })
+  send('tool-workflow/run-start', { runId: 'r1', name: `${HOSTILE}${OVERSIZED}` })
+  send('tool-workflow/agent-start', { runId: 'r1', seq: 1, label: HOSTILE, phase: HOSTILE, childId: 'c' })
+  send('tool-workflow/agent-end', { runId: 'r1', seq: 1, outcome: HOSTILE })
+  send('tool-workflow/run-end', { runId: 'r1', stopReason: HOSTILE })
+
   // retry, approval audit, compaction marker, and a command's output.
   send('llm/retry', { retryId: 'r', turn: 1, step: 8, provider: HOSTILE, policyKey: 'p', mode: 'always', retry: 1, delayMs: 10, failure: { message: `${HOSTILE}${OVERSIZED}`, code: 'X' } })
   send('approval/asked', { id: 'a1', toolName: `bash${HOSTILE}` })
@@ -161,6 +184,25 @@ describe('untrusted controls (D7.8, spec §8 T3 acceptance)', () => {
     await terminal.waitForFrame(before)
     for (const [name, pattern] of FORBIDDEN) expect(terminal.snapshot(), name).not.toMatch(pattern)
 
+    await controller.dispose()
+  })
+
+  it('keeps the completion menu and the agents tree clean of hostile content too', async () => {
+    const { terminal, controller, send } = mount()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    hostileSession(send)
+    await terminal.waitForFrame(before)
+
+    // `@` opens the file menu over the hostile candidates above.
+    for (const key of ['@', 's']) {
+      before = terminal.frames
+      terminal.input(key)
+      await terminal.waitForFrame(before)
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    for (const [name, pattern] of FORBIDDEN) expect(terminal.snapshot(), `menu: ${name}`).not.toMatch(pattern)
+    expect(terminal.themeViolations()).toEqual([])
     await controller.dispose()
   })
 

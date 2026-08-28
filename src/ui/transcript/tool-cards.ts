@@ -11,9 +11,9 @@
  *   - the head is one row (truncated), every body row is wrapped — no rendered
  *     row may exceed the terminal width or TuiMainScreen crashes;
  *   - a failure shows its whole body; only successes fold. */
-import { homedir } from 'node:os'
 import { Markdown, truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { displayText, type Palette } from '../../theme/palette.js'
+import { abbreviateHome } from '../paths.js'
 import { wrapPlain } from './cells.js'
 import { highlightToAnsi } from '../../theme/highlight.js'
 import { markdownTheme } from '../../theme/markdown-theme.js'
@@ -125,13 +125,6 @@ function splitExitStatus(text: string): { body: string; badge: string | undefine
   const exit = EXIT_MARKER.exec(text)
   if (exit) return { body: text.slice(0, exit.index), badge: `[exit ${exit[1]}]` }
   return { body: text, badge: undefined }   // dsh emits no marker for a clean exit 0
-}
-
-/** `~`-abbreviate the home prefix, the way every shell prompt does. */
-function abbreviateHome(path: string): string {
-  const home = homedir()
-  if (path === home) return '~'
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }
 
 const terminalHead: ToolHeadBuilder = ({ args }) => ({ key: stringArg(args, 'command'), note: stringArg(args, 'description') })

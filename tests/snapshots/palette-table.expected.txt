@@ -1,5 +1,6 @@
 terminal 108x20 buffer=normal length=21 base=1 viewport=1
 lifecycle started=1 stopped=0 progress=inactive
+title "talon"
 cursor hidden @17,2
 0| "/palette"
   style 0-7 dim

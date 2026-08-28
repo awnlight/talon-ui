@@ -147,6 +147,28 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
         delayMs: d.delayMs,
         message: String((d.failure as { message?: unknown } | undefined)?.message ?? ''),
       }]
+    // The workflow record (spec §3.9). Unknown outcome strings are narrowed to
+    // the terminal ones the card renders: an unrecognized settlement is still
+    // a settlement, and treating it as "still running" would be a lie.
+    case 'tool-workflow/run-start':
+      return [{ kind: 'workflow-run-start', runId: String(d.runId ?? ''), name: String(d.name ?? '') }]
+    case 'tool-workflow/agent-start':
+      return [{
+        kind: 'workflow-agent-start', runId: String(d.runId ?? ''), seq: Number(d.seq ?? 0),
+        label: String(d.label ?? ''), phase: typeof d.phase === 'string' ? d.phase : undefined,
+      }]
+    case 'tool-workflow/agent-end':
+      return [{
+        kind: 'workflow-agent-end', runId: String(d.runId ?? ''), seq: Number(d.seq ?? 0),
+        outcome: d.outcome === 'completed' || d.outcome === 'cancelled' ? d.outcome : 'failed',
+      }]
+    case 'tool-workflow/run-end':
+      return [{
+        kind: 'workflow-run-end', runId: String(d.runId ?? ''),
+        stopReason: d.stopReason === 'completed' || d.stopReason === 'cancelled' ? d.stopReason : 'error',
+      }]
+    case 'session/title':
+      return [{ kind: 'session-title', title: String(d.title ?? '') }]
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':
