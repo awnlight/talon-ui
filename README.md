@@ -4,13 +4,15 @@
 
 A terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) agents, shipped as a dsh **plugin bundle**. Talon renders a full interactive session — streaming transcript, tool approvals, user questions, slash commands, and cross-workspace session resume — inside your terminal, on top of an unmodified harness checkout.
 
-![A talon session: role headers, context-injection cards, and a streaming reply](docs/assets/talon.png)
+![A talon session: the boot banner, grouped context-injection cards, and a streaming reply](docs/assets/talon.png)
 
 > 中文文档见 [README.zh.md](README.zh.md).
 
 ## Features
 
-- **Streaming transcript** — role headers with plain, copy-friendly text (drag-select copies exact message text), streamed markdown that settles into cached committed cells, context-injection cards, and zero `ESC[3J` scrollback wipes during normal interaction.
+- **Boot banner** — the session opens on dsh's whale in the talon teal, beside the version, the active model and the working directory. It is a transcript cell rather than a fixture, so it scrolls into scrollback as the session grows instead of holding rows forever, and it is the one place the full path is spelled out.
+- **Streaming transcript** — role headers with plain, copy-friendly text (drag-select copies exact message text), streamed markdown that settles into cached committed cells, context-injection cards grouped by proximity with the label carrying the emphasis, a blank row between a turn's reasoning and its reply, and zero `ESC[3J` scrollback wipes during normal interaction.
+- **A tone hierarchy, not a wall of grey** — the terminal's own foreground for identity, the brand teal for the model, `dim` for reference values, and a threshold tone for context occupancy, which turns warning at 75% and error at 90%. Everything is ANSI-16 with no backgrounds, so it remaps to your terminal theme; the teal gradient is the single exemption, enforced by a snapshot gate.
 - **Approval panel** — dsh's first terminal approval UI. When a tool asks for escalation (e.g. a bash command denied by the sandbox retrying with `sandbox_permissions`), an inline panel shows the tool, the command preview, the cwd, and the justification. `1` allow once, `2` reject, `Esc` cancel. Every decision leaves a one-line audit entry in the transcript.
 - **User questions** — the model can ask you questions through `ask_user_question` (composed into the bundle): single- and multi-select options, custom free-form answers, multi-question requests answered serially, and plan-review intents rendered with the approving option highlighted.
 - **Slash commands** — `/help`, `/status`, `/resume`, `/clear`, `/exit`, `/quit`, with fuzzy autocomplete on `/`. Command results render from durable session events, so a resumed session replays them byte-identically.
