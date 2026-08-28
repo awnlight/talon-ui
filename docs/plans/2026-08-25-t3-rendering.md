@@ -325,7 +325,13 @@ The three `DSH_SNAPSHOT` modes are honored as documented behaviour rather than a
 
 Hostile corpus (C0/C1, ESC sequences, fake OSC8, RTL overrides, oversized lines, malformed XML, markdown bombs) through EVERY T3 surface: card head args, terminal output, diff paths+content, read excerpts, search matches, web titles/urls, generic markdown, retry message, compaction summary path, footer strings. Assert: displayText neutralization everywhere, zero theme violations, zero wipes, no row overflow crash. Stress: extend the perf spec with a tool-heavy 100k-event log (cards + markdown); record steady-state frame cost in the test output; if >10ms, THEN implement the block-commit optimization (Ruling 15) as a follow-up commit inside this task and re-measure.
 
-- [ ] Steps: corpus + failing-if-unescaped assertions → fixes if any surface leaks → stress numbers recorded → gate. Commit: `test: untrusted-controls adversarial snapshots + tool-heavy stress gate (D7.8, spec §8 T3)`
+**The corpus found a real hole and it is fixed: BIDI controls survived `displayText`.** U+202A-E and friends are not C0/C1 — they are printable format codepoints — so the D7.8 filter let them through, and they reorder the glyphs around them: a tool result could make a rendered row read as something other than what the log recorded (the Trojan-Source class). `displayText` now escapes the overrides, embeddings, isolates and marks alongside the control characters. Every other surface was already clean.
+
+The gate asserts on the FRAME rather than on the strings that produced it — no OSC, no CSI, no OSC 8, no bare BEL/NUL, no C1, no raw bidi reaches the emulator — through all three Ctrl+O modes and with reasoning toggled, and it renders the same hostile session at 10/20/40/100 columns without an over-wide row. Widths below ~10 are out of scope by DESIGN, not by defect: D10 caps CONTENT lines and wrapping multiplies by the width factor, so a one-column terminal turns a 4000-character line into 4000 rows.
+
+**Ruling 15's measurement says NO to the block-commit optimization.** A tool-heavy 100k-event log (cards + Markdown bodies, the cap evicting throughout) renders a steady-state frame in **~0.06-0.08ms** — roughly 100× under the 10ms floor. The condition for implementing it ("only if the existing perf gate fails without it") is not met, so it stays unimplemented and the measurement is recorded in the suite's own output.
+
+- [x] Steps: corpus + failing-if-unescaped assertions → fixes if any surface leaks → stress numbers recorded → gate. Commit: `test: untrusted-controls adversarial snapshots + tool-heavy stress gate (D7.8, spec §8 T3)`
 
 ---
 
