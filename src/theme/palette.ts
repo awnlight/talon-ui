@@ -120,6 +120,31 @@ export function brandGradient(text: string, palette: Palette): string {
   return `${painted.join('')}\x1b[39m`
 }
 
+/** Paint a MULTI-ROW mark with the brand ramp swept diagonally — what the boot
+ * banner's mark needs and `brandGradient` (one row, left to right) cannot give.
+ * Every colour it emits comes from `gradientAt`, so `onBrandGradient` accepts
+ * each one and the theme gate's SINGLE brand exemption still covers the whole
+ * banner — no second exemption, no widened rule. Degrades exactly as
+ * `brandGradient` does: the ANSI-16 `brand` role (36) without truecolor, plain
+ * text under NO_COLOR. A blank cell is left unpainted; it inherits the previous
+ * cell's on-ramp foreground, which is invisible and still on the ramp. */
+export function brandGrid(rows: readonly string[], palette: Palette): string[] {
+  if (!palette.enabled) return [...rows]
+  if (!palette.trueColor) return rows.map((row) => palette.brand(row))
+  const width = Math.max(1, ...rows.map((row) => [...row].length))
+  // The sweep runs corner to corner, so the ramp reads as one diagonal light
+  // source across the whole mark rather than restarting on every row.
+  const span = Math.max(1, width + rows.length - 2)
+  return rows.map((row, y) => {
+    const painted = [...row].map((char, x) => {
+      if (char === ' ') return char
+      const [r, g, b] = gradientAt(Math.min(1, (x + y) / span))
+      return `\x1b[38;2;${r};${g};${b}m${char}`
+    })
+    return painted.length === 0 ? '' : `${painted.join('')}\x1b[39m`
+  })
+}
+
 /** Whether an rgb foreground sits ON the brand ramp — the ONE exemption the
  * theme gate grants (spec §7.1). Exact rather than approximate: each channel
  * constrains the interpolation parameter to an interval, and the colour is on

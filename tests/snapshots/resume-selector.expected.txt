@@ -1,28 +1,39 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @11,0
+cursor hidden @17,0
 0| <blank>
-1| "─ resume ───────────────────────────────────────────────────────────────"
+1| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+2| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+3| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+4| " ▝█████████▘"
+  style 0-11 fg-6
+5-6| <blank>
+7| "─ resume ───────────────────────────────────────────────────────────────"
   style 0-71 dim
-2| "⌕ type to filter"
+8| "⌕ type to filter"
   style 0-15 dim
-3| "this workspace /workspace/talon-ui  ⇥ all workspaces (3)"
+9| "this workspace /workspace/talon-ui  ⇥ all workspaces (3)"
   style 0-33 fg-13
   style 36-55 dim
-4| "  Fix the login flow  2025-08-13T15:46:40.000Z · persisted · s-abc"
+10| "  Fix the login flow  2025-08-13T15:46:40.000Z · persisted · s-abc"
   style 20-65 dim
-5| "→ Untitled session    2025-08-12T12:00:00.000Z · live · persisted · s-"
+11| "→ Untitled session    2025-08-12T12:00:00.000Z · live · persisted · s-"
   style 0-69 inverse
-6| "↑/↓ · tab scope · enter resume · esc clear/cancel"
+12| "↑/↓ · tab scope · enter resume · esc clear/cancel"
   style 0-48 dim
-7| "session is already live in this runtime"
+13| "session is already live in this runtime"
   style 0-38 fg-1
-8| "────────────────────────────────────────────────────────────────────────"
+14| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-9| "❯"
+15| "❯"
   style 0-0 dim
   style 2-2 inverse
-10| "enter send · shift+enter newline · ctrl+c exit"
+16| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-11-17| <blank>
+17| <blank>

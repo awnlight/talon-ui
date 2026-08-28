@@ -5,6 +5,7 @@
 import { Container, Text, type Component } from '@earendil-works/pi-tui'
 import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
+import { BannerCell } from '../banner.js'
 import { ApprovalAuditCell, ContextCardCell, NoticeCell, SpacerCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
 import { ORPHAN_CARD_NAME, ToolCardCell, type CardVisibility } from './tool-cards.js'
@@ -18,6 +19,30 @@ const COMPACTION_MARKER = '… earlier context was compacted …'
 /** What a failed model request says in the transcript (spec §4.1). */
 const RETRY_NOTICE = (e: { retry: number; limit: number | '∞'; delayMs: number; message: string }): string =>
   `Retrying model request (${e.retry}/${e.limit}) in ${e.delayMs}ms: ${e.message}`
+
+/** Cell kinds whose CONSECUTIVE instances form one visual group (spec §4.1
+ * spacing, proximity). Three `◇ context` rows are one injection of three
+ * things, not three unrelated events: separating them with blank rows spends
+ * six rows saying so and makes the group read as noise. The same holds for a
+ * run of `◆ approval` audit rows. Anything else keeps its blank row — a user
+ * message and an assistant reply are genuinely separate objects. */
+function groupable(cell: Component): boolean {
+  return cell instanceof ContextCardCell || cell instanceof ApprovalAuditCell
+}
+
+/** Whether `cell` continues the group `previous` started. Same class only:
+ * a context card does not group with an approval row. */
+function groupsWith(previous: Component | undefined, cell: Component): boolean {
+  return previous !== undefined && groupable(cell) && previous.constructor === cell.constructor
+}
+
+/** Whether the blank row between `previous` and `cell` is already paid for.
+ * Two ways it can be: the pair is one group (above), or `previous` is the
+ * BANNER, which renders its own padding row — charging the spacer as well
+ * would put two blank rows under the banner and one above it. */
+function spacerPaid(previous: Component | undefined, cell: Component): boolean {
+  return previous instanceof BannerCell || groupsWith(previous, cell)
+}
 
 // O(1) mount-cap accounting (I3 fix): the cap is measured in CONTENT lines
 // (logical lines before width-wrapping). Cells report their own count via
@@ -87,18 +112,21 @@ export class Transcript {
     this.mountedLineCount = this.marker === undefined ? 0 : 1
     let spacer: SpacerCell | undefined
     let shownSomething = false
+    let previousShown: Component | undefined
     for (const child of this.container.children) {
       if (child === this.marker) continue
       if (child instanceof SpacerCell) { spacer = child; continue }
       if (child instanceof StreamingAssistantCell) this.applyHeader(child)
       const lines = this.lineCountOf(child)
       if (lines > 0 && !(child instanceof StreamingAssistantCell)) this.headerTurn = undefined
-      // A blank row is earned only BETWEEN two visible cells: an invisible
-      // cell takes its spacer with it, or hidden mode would be a blank screen.
-      const keep = lines > 0 && shownSomething
+      // A blank row is earned only BETWEEN two visible cells that are not the
+      // same group: an invisible cell takes its spacer with it (or hidden mode
+      // would be a blank screen), and a group closes ranks (proximity).
+      const keep = lines > 0 && shownSomething && !spacerPaid(previousShown, child)
       spacer?.setHidden(!keep)
       this.mountedLineCount += (keep ? 1 : 0) + lines
       shownSomething ||= lines > 0
+      if (lines > 0) previousShown = child
       spacer = undefined
     }
     this.trim()
@@ -128,6 +156,15 @@ export class Transcript {
       this.mountedLineCount += child.lineCount() - before
     }
     this.trim() // restoring reasoning can put the transcript back over the cap
+  }
+
+  /** Mount the boot banner as the transcript's FIRST cell (spec D6). A cell,
+   * not a fixture: TuiMainScreen paints into the scrollback, so the banner
+   * scrolls away as the session grows, and the mount cap may evict it exactly
+   * like any other history. Call before the first event — it takes the head
+   * position by being first, not by inserting. */
+  mountBanner(cell: BannerCell): void {
+    this.addChild(cell, cell.contentLineCount())
   }
 
   apply(event: AppEvent): void {
@@ -296,11 +333,24 @@ export class Transcript {
   private appendCell(cell: Component, lines: number): void {
     if (this.container.children.length > 0) {
       const spacer = new SpacerCell()
-      spacer.setHidden(lines === 0 || this.mountedLineCount === 0)
+      spacer.setHidden(lines === 0 || this.mountedLineCount === 0 || spacerPaid(this.lastVisible(), cell))
       this.addChild(spacer, spacer.contentLineCount())
     }
     if (lines > 0 && !(cell instanceof StreamingAssistantCell)) this.headerTurn = undefined
     this.addChild(cell, lines)
+  }
+
+  /** The last cell that currently renders anything — what a new cell's spacer
+   * is measured against. Spacers, the trim marker and cells hidden by Ctrl+O
+   * are all skipped: a group must close ranks across an invisible neighbour
+   * exactly as it does across none. */
+  private lastVisible(): Component | undefined {
+    for (let i = this.container.children.length - 1; i >= 0; i--) {
+      const child = this.container.children[i]!
+      if (child === this.marker || child instanceof SpacerCell) continue
+      if (this.lineCountOf(child) > 0) return child
+    }
+    return undefined
   }
 
   private cell(key: string, turn: number): StreamingAssistantCell {
@@ -334,7 +384,7 @@ export class Transcript {
   private lineCountOf(c: Component): number {
     if (c instanceof StreamingAssistantCell) return c.lineCount()
     if (c instanceof ToolCardCell || c instanceof ContextCardCell || c instanceof WorkflowCardCell) return c.contentLineCount()
-    if (c instanceof UserMessageCell || c instanceof NoticeCell) return c.contentLineCount()
+    if (c instanceof UserMessageCell || c instanceof NoticeCell || c instanceof BannerCell) return c.contentLineCount()
     if (c instanceof SpacerCell) return c.contentLineCount()
     return 1 // ApprovalAuditCell and the trim marker are one line each
   }

@@ -1,28 +1,39 @@
 terminal 72x24 buffer=normal length=24 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @14,0
+cursor hidden @20,0
 0| <blank>
-1| "─ question ─────────────────────────────────────────────────────────────"
+1| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+2| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+3| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+4| " ▝█████████▘"
+  style 0-11 fg-6
+5-6| <blank>
+7| "─ question ─────────────────────────────────────────────────────────────"
   style 0-71 dim
-2| "Question 1/1 (1 unanswered) · Checks"
+8| "Question 1/1 (1 unanswered) · Checks"
   style 0-35 dim
-3| "Which checks should run before the push?"
-4| <blank>
-5| " › 1. [x] Types"
+9| "Which checks should run before the push?"
+10| <blank>
+11| " › 1. [x] Types"
   style 0-14 fg-13 bold
-6| "          tsc --noEmit"
+12| "          tsc --noEmit"
   style 0-21 dim
-7| "   2. [ ] Tests"
-8| "   3. [ ] Lint"
-9| <blank>
-10| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
+13| "   2. [ ] Tests"
+14| "   3. [ ] Lint"
+15| <blank>
+16| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
   style 0-62 dim
-11| "────────────────────────────────────────────────────────────────────────"
+17| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-12| "❯"
+18| "❯"
   style 0-0 dim
   style 2-2 inverse
-13| "enter send · shift+enter newline · ctrl+c exit"
+19| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-14-23| <blank>
+20-23| <blank>

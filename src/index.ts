@@ -13,6 +13,7 @@
  * reads exactly as the task brief specifies, and so this plugin's types stay
  * decoupled from talon-boot's (separate plugins, per boot.ts's
  * dedicated-front-door decision). */
+import { readFileSync } from 'node:fs'
 import { ProcessTerminal, getCapabilities } from '@earendil-works/pi-tui'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { createController } from './app/controller.js'
@@ -31,6 +32,19 @@ export const name = 'talon-ui'
 export const inject = ['agents', 'sessions', 'userQuestions', 'approval', 'commands', 'llm'] as const
 
 export interface Config { sessionId?: string }
+
+/** talon's own version, for the boot banner. `../package.json` resolves to the
+ * repo root from BOTH `src/index.ts` and the built `lib/index.js`, so one
+ * expression serves source and package alike. A banner is not worth failing a
+ * boot over: an unreadable manifest simply drops the segment. */
+export function readVersion(manifestUrl: URL = new URL('../package.json', import.meta.url)): string | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(manifestUrl, 'utf8')) as { version?: unknown }
+    return typeof manifest.version === 'string' ? manifest.version : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const ROOT_DISPOSE_TIMEOUT_MS = 5_000
 const FAIL_LOUD_RELEASE_TIMEOUT_MS = 2_000
@@ -127,6 +141,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           projectionCache: anyCtx.get('sessionProjectionCache'),
           llm: anyCtx.llm,
         },
+        version: readVersion(),
         exit: (code) => disposeRootAndExit(ctx, code),
       })
       return () => { removeGuards(); return controller.dispose() }

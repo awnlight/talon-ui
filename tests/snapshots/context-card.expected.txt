@@ -1,24 +1,36 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @8,2
-0| "You"
+cursor hidden @14,2
+0| <blank>
+1| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+2| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+3| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+4| " ▝█████████▘"
+  style 0-11 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Which skills are loaded?"
-2| <blank>
-3| "◇ context · skill-catalog · 3 lines"
-  style 0-34 dim
-4| <blank>
-5| "You"
+7| "Which skills are loaded?"
+8| <blank>
+9| "◇ context · skill-catalog · 3 lines"
+  style 0-11 dim
+  style 25-34 dim
+10| <blank>
+11| "You"
   style 0-2 bold underline
-6| "Use executing-plans."
-7| "────────────────────────────────────────────────────────────────────────"
+12| "Use executing-plans."
+13| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-8| "❯"
+14| "❯"
   style 0-0 dim
   style 2-2 inverse
-9| "enter send · shift+enter newline · ctrl+c exit"
+15| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-10| "/workspace/talon-ui"
-  style 0-18 dim
-11-17| <blank>
+16| "talon-ui"
+17| <blank>

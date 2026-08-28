@@ -1,29 +1,40 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @10,19
-0| "◇ bash · pnpm test"
+cursor hidden @16,8
+0| <blank>
+1| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+2| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+3| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+4| " ▝█████████▘"
+  style 0-11 fg-6
+5| <blank>
+6| "◇ bash · pnpm test"
   style 0-17 fg-3
-1| "└ running…"
+7| "└ running…"
   style 0-9 dim
-2| <blank>
-3| "─ approval ─────────────────────────────────────────────────────────────"
+8| <blank>
+9| "─ approval ─────────────────────────────────────────────────────────────"
   style 0-71 dim
-4| "◇ bash · pnpm test"
+10| "◇ bash · pnpm test"
   style 0-17 fg-3
-5| "  /workspace/talon-ui · sandbox escalation"
+11| "  /workspace/talon-ui · sandbox escalation"
   style 0-41 dim
-6| "  [1] allow once   [2] reject   esc cancel"
+12| "  [1] allow once   [2] reject   esc cancel"
   style 2-15 fg-13 bold
   style 19-28 dim
   style 32-41 dim
-7| "────────────────────────────────────────────────────────────────────────"
+13| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-8| "⚙"
+14| "⚙"
   style 0-0 dim
   style 2-2 inverse
-9| "enter send · shift+enter newline · ctrl+c exit"
+15| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-10| "/workspace/talon-ui"
-  style 0-18 dim
-11-17| <blank>
+16| "talon-ui"
+17| <blank>

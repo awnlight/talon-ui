@@ -1,34 +1,44 @@
-terminal 72x18 buffer=normal length=18 base=0 viewport=0
+terminal 72x18 buffer=normal length=19 base=1 viewport=1
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @10,2
-0| "You"
+cursor hidden @15,2
+0| <blank>
+1| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+2| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+3| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+4| " ▝█████████▘"
+  style 0-11 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Show me the flag."
-2| <blank>
-3| "◆ read · src/flags.ts:9"
+7| "Show me the flag."
+8| <blank>
+9| "◆ read · src/flags.ts:9"
   style 0-22 fg-2
-4| "   9 // the feature flags"
+10| "   9 // the feature flags"
   style 2-3 dim
   style 5-24 dim
-5| "  10 export const flags = {"
+11| "  10 export const flags = {"
   style 2-3 dim
   style 5-10 fg-6
   style 12-16 fg-6
-6| "  11   modern: true,"
+12| "  11   modern: true,"
   style 2-3 dim
   style 15-18 fg-3
-7| "  12 }"
+13| "  12 }"
   style 2-3 dim
-8| "└ 120 lines"
+14| "└ 120 lines"
   style 0-10 dim
-9| "────────────────────────────────────────────────────────────────────────"
+15| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-10| "⚙"
+16| "⚙"
   style 0-0 dim
   style 2-2 inverse
-11| "enter send · shift+enter newline · ctrl+c exit"
+17| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-12| "/workspace/talon-ui"
-  style 0-18 dim
-13-17| <blank>
+18| "talon-ui"

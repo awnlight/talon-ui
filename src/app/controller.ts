@@ -24,10 +24,11 @@ import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { AgentsPanel, type AgentEntry } from '../ui/panels/agents-panel.js'
+import { BannerCell } from '../ui/banner.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { Notifier } from '../ui/notify.js'
-import { abbreviateHome } from '../ui/paths.js'
+import { abbreviateHome, projectName } from '../ui/paths.js'
 import { DEFAULT_TITLE, TerminalTitle } from '../ui/terminal-title.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
@@ -120,6 +121,10 @@ export interface ControllerDeps {
    * exercise `/model`. */
   modelSelection?: { current: ModelTarget | undefined }
   exit(code: number): void
+  /** talon's own version, for the boot banner. Read from package.json by the
+   * plugin entry (src/index.ts); absent in tests, and the banner then simply
+   * drops the segment. */
+  version?: string
   /** Overridden in tests; the default runs the platform clipboard command. */
   readClipboardImage?: ClipboardImageReader
 }
@@ -233,7 +238,11 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // Turn-end notification while the terminal is unfocused (spec §8 T4). Focus
   // is talon's own tracking: pi-tui has none.
   const notifier = new Notifier(terminal)
-  notifier.start()
+  // NOT started here: `notifier.start()` writes DEC 1004, the terminal answers
+  // `\x1b[I` on stdin, and until `tui.start()` has called setRawMode(true)
+  // (pi-tui terminal.js:78-86) the tty is still in cooked mode with echo on —
+  // so the reply is ECHOED to the screen as a literal `^[[I` above the first
+  // frame. It is started after tui.start() instead; see the call site.
   // Persisted PREFERENCE (spec §3.10) — never session UI state. A committed
   // change, including one made by editing the document by hand, applies here.
   const settings = bindSettings(deps.services.settings, (next) => {
@@ -258,7 +267,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   let phase: GlyphPhase = 'idle'
   const syncFooter = (): void => {
     const view = metrics.read()
-    composer.setFooter({ cwd: abbreviateHome(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued, agents: liveAgents })
+    composer.setFooter({ project: projectName(workspace), branch, model: view.model, cachePercent: view.cachePercent, contextPercent: view.contextPercent, queued, agents: liveAgents })
   }
   const setPhase = (next: GlyphPhase): void => { phase = next; composer.setPhase(next) }
   const showCompaction = (): void => {
@@ -270,6 +279,22 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
     composer.setHint(running ? HINT_RUNNING : HINT_IDLE)
   }
+
+  /** Mount the boot banner on whichever transcript is current (spec D6). Called
+   * once at construction and again on every rebind, because a rebind IS a new
+   * session: a different workspace, a different model, a fresh screen that
+   * deserves the same entry the first one got. The full working directory lives
+   * here and ONLY here — the footer carries just the project name. */
+  const mountBanner = (): void => {
+    transcript.mountBanner(new BannerCell({
+      version: deps.version,
+      // Before the first request declares one, the boot's own selection is the
+      // honest answer; after that the metrics fold is authoritative.
+      model: metrics.read().model ?? deps.modelSelection?.current?.model,
+      cwd: abbreviateHome(workspace),
+    }, palette))
+  }
+  mountBanner()
 
   tui.addChild(transcriptSlot)
   tui.addChild(panels.container)
@@ -388,6 +413,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     transcript = new Transcript(palette)
     transcriptSlot.clear()
     transcriptSlot.addChild(transcript.container)
+    mountBanner()                   // a rebind is a new session; it gets the same entry
     // Replay from the LIVE session (Ruling 8): whatever agents.resume() loaded,
     // through the same translation live events take — so a resumed screen and
     // the screen that produced it are the same screen.
@@ -767,6 +793,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   }))
 
   tui.start()
+  // Raw mode is on now (see the Notifier construction above), so the terminal's
+  // focus reply is consumed by the input handler instead of echoed.
+  notifier.start()
 
   async function dispose(): Promise<void> {
     if (disposed) return
