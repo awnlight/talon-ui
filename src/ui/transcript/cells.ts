@@ -3,6 +3,7 @@
  * Perf law: render(width) serves a width-keyed cache; recompute only via
  * renderLines(); every mutator calls dropLines() (spec §5.1). */
 import { truncateToWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui'
+import type { CardVisibility } from './tool-cards.js'
 import type { Notice } from '../../backend/app-events.js'
 import { displayText, type Palette } from '../../theme/palette.js'
 
@@ -16,6 +17,19 @@ export function messageHeader(label: string, color: (s: string) => string, palet
 export function wrapPlain(text: string, width: number): string[] {
   const safe = Math.max(1, width)
   return text.split('\n').flatMap((line) => (line === '' ? [''] : wrapTextWithAnsi(line, safe)))
+}
+
+/** The one blank row between two cells (spec §4.1 spacing). It is a CELL, not
+ * a pi-tui Spacer, because Ctrl+O's hidden mode has to take a card's spacer
+ * away with the card — otherwise a screen of hidden cards is a screen of blank
+ * rows. The transcript owns the pairing. */
+export class SpacerCell implements Component {
+  private hidden = false
+  setHidden(hidden: boolean): void { this.hidden = hidden }
+  contentLineCount(): number { return this.hidden ? 0 : 1 }
+  /* v8 ignore next -- required by Component; a spacer holds no cache to drop, so nothing calls it. */
+  invalidate(): void {}
+  render(): string[] { return this.hidden ? [] : [''] }
 }
 
 export abstract class CachedCell implements Component {
@@ -67,14 +81,36 @@ export class ApprovalAuditCell extends CachedCell {
 }
 
 /** One dim line per injected context message (carryover 11): `◇ context ·
- * <label>[ · <summary>] · <n> lines`. Collapsed presentation — the body stays
- * in the log and expansion arrives with T3's visibility cycling. */
+ * <label>[ · <summary>] · <n> lines`. Ctrl+O reaches it too (T2's promise,
+ * spec §4.2): expanded adds the injected body underneath, hidden takes the
+ * whole card away. */
 export class ContextCardCell extends CachedCell {
-  constructor(private readonly label: string, private readonly summary: string | undefined, private readonly lines: number, private readonly palette: Palette) { super() }
-  contentLineCount(): number { return 1 }
+  private visibility: CardVisibility = 'collapsed'
+  private readonly body: string[]
+
+  constructor(private readonly label: string, private readonly summary: string | undefined, text: string, private readonly palette: Palette) {
+    super()
+    this.body = text === '' ? [] : displayText(text).split('\n')
+  }
+
+  /** Ephemeral UI state applied as a MUTATOR, never a render argument (§3.10). */
+  setVisibility(mode: CardVisibility): void {
+    this.visibility = mode
+    this.dropLines()
+  }
+
+  contentLineCount(): number {
+    if (this.visibility === 'hidden') return 0
+    return this.visibility === 'expanded' ? 1 + this.body.length : 1
+  }
+
   protected renderLines(width: number): string[] {
+    if (this.visibility === 'hidden') return []
+    const safe = Math.max(1, width)
     const summary = this.summary === undefined ? '' : ` · ${displayText(this.summary)}`
-    const line = this.palette.dim(`◇ context · ${displayText(this.label)}${summary} · ${this.lines} lines`)
-    return [truncateToWidth(line, Math.max(1, width), '…')]
+    const head = this.palette.dim(`◇ context · ${displayText(this.label)}${summary} · ${this.body.length} lines`)
+    const rows = [truncateToWidth(head, safe, '…')]
+    if (this.visibility === 'expanded') rows.push(...this.body.flatMap((line) => wrapPlain(line, safe)).map((row) => this.palette.dim(row)))
+    return rows
   }
 }

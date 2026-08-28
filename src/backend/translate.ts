@@ -35,7 +35,9 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
         kind: 'context-card',
         label: kind,
         summary: source.form === 'notice' ? source.summary : undefined,
-        lines: text === '' ? 0 : text.split('\n').length,
+        // The body travels with the card: Ctrl+O's expanded mode shows it, and
+        // the collapsed line counts it (spec §4.2, T2 carryover 11).
+        text,
       }]
     }
     case 'turn/start':

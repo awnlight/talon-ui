@@ -77,12 +77,38 @@ describe('ApprovalAuditCell', () => {
 })
 
 describe('ContextCardCell', () => {
+  const body = Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n')
+
   it('ContextCardCell renders one dim collapsed line with neutralized metadata', () => {
-    const cell = new ContextCardCell('skill\x1bcatalog', 'sum\x07mary', 12, createPalette(false))
+    const cell = new ContextCardCell('skill\x1bcatalog', 'sum\x07mary', body, createPalette(false))
     expect(cell.contentLineCount()).toBe(1)
     const rows = cell.render(60)
     expect(rows).toEqual([expect.stringContaining('◇ context · skill\\x1bcatalog · sum\\x07mary · 12 lines')])
     expect(cell.render(60)).toBe(rows)   // width-keyed cache identity (.toBe law)
+  })
+
+  it('joins Ctrl+O: expanded shows the injected body, hidden takes the card away (T2 carryover 11)', () => {
+    const cell = new ContextCardCell('skill-catalog', undefined, 'a\nb', createPalette(false))
+    cell.setVisibility('expanded')
+    expect(cell.contentLineCount()).toBe(3)
+    expect(cell.render(60)).toEqual(['◇ context · skill-catalog · 2 lines', 'a', 'b'])
+
+    cell.setVisibility('hidden')
+    expect(cell.contentLineCount()).toBe(0)
+    expect(cell.render(60)).toEqual([])
+
+    cell.setVisibility('collapsed')
+    expect(cell.render(60)).toEqual(['◇ context · skill-catalog · 2 lines'])
+  })
+
+  it('neutralizes controls in the expanded body and counts an empty body as zero lines', () => {
+    const hostile = new ContextCardCell('c', undefined, 'a\x1b]0;evil\x07', createPalette(false))
+    hostile.setVisibility('expanded')
+    expect(hostile.render(60)[1]).toBe('a\\x1b]0;evil\\x07')
+
+    const empty = new ContextCardCell('c', undefined, '', createPalette(false))
+    empty.setVisibility('expanded')
+    expect(empty.render(60)).toEqual(['◇ context · c · 0 lines'])
   })
 })
 

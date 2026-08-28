@@ -22,6 +22,11 @@ import { renderUnknownXml } from './unknown-xml.js'
 
 export type ToolCardClass = 'terminal' | 'diff' | 'read' | 'search' | 'web' | 'generic'
 
+/** Ctrl+O's transcript-wide cycle (spec §4.2). Ephemeral UI state: never
+ * persisted, never logged (§3.10). A FAILED card ignores it entirely — a
+ * failure shows its whole body in every mode. */
+export type CardVisibility = 'collapsed' | 'expanded' | 'hidden'
+
 /** The name-keyed card registry (T3 ruling 1), from the verified dsh-base +
  * talon tool composition. Anything absent takes the unregistered path. */
 export const TOOL_CARD_CLASSES: Record<string, ToolCardClass> = {
@@ -67,6 +72,9 @@ export interface ToolBody {
    * Markdown theme and folds the RESULT (spec §4.2 — cut visible rows, never
    * source lines, which is what makes a fenced block fold correctly). */
   markdown?: string
+  /** Rows only an EXPANDED card shows — the raw `arguments`, kept literal
+   * (spec §4.2), so an expanded card says exactly what the model asked for. */
+  expanded?: string[]
 }
 export type ToolBodyBuilder = (call: ToolCall, result: ToolResult, palette: Palette) => ToolBody
 
@@ -350,8 +358,13 @@ const webBody: ToolBodyBuilder = (call, result, palette) => {
 // The curated tools whose results are PROSE. The body goes through the shared
 // Markdown theme and folds by rendered rows (spec §4.2).
 
-const genericBody: ToolBodyBuilder = (_call, result) =>
-  result.resultText === '' ? { lines: [] } : { lines: [], markdown: result.resultText }
+const genericBody: ToolBodyBuilder = (call, result, palette) => ({
+  lines: [],
+  ...result.resultText === '' ? {} : { markdown: result.resultText },
+  // Literal, never through the parser: what an expanded card reveals is the
+  // model's own JSON, not a rendering of it.
+  ...call.rawArguments === '' ? {} : { expanded: dimLines(call.rawArguments, palette) },
+})
 
 // ── unregistered (D13) ──────────────────────────────────────────────────────
 // A tool talon knows nothing about: a REAL parser or an explicit refusal, never
@@ -383,6 +396,7 @@ export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBody
 }
 
 const BODY_INDENT = '  '
+const NO_ROWS: string[] = []
 const PENDING_GLYPH = '◇'
 const SETTLED_GLYPH = '◆'
 const RUNNING_BODY = '└ running…'
@@ -415,6 +429,8 @@ function oneLine(text: string): string {
 
 export class ToolCardCell implements Component {
   private result: ToolResult | undefined
+  private body: ToolBody | undefined
+  private visibility: CardVisibility = 'collapsed'
   // A failure by either route — the tool flagged it, or the class read one out
   // of the result (a non-zero shell exit). Drives the head tone AND the
   // failed-forces-expanded law, so both can never disagree.
@@ -428,6 +444,8 @@ export class ToolCardCell implements Component {
   // contentLineCount() width-free, the same law the streaming cell follows.
   private md: Markdown | undefined
   private mdSourceLines = 0
+  // Rows only an expanded card shows, rendered under everything else.
+  private extra: string[] = []
   private cache: { width: number; lines: string[] } | undefined
 
   constructor(private readonly call: ToolCall, private readonly palette: Palette) {
@@ -437,28 +455,56 @@ export class ToolCardCell implements Component {
   /** The key the transcript settles this card by (ruling 5). */
   get callId(): string { return this.call.callId }
   isSettled(): boolean { return this.result !== undefined }
+
+  /** Ctrl+O, applied as a MUTATOR (never a render argument) so the cache drops
+   * and the transcript can re-register the line-count delta. */
+  setVisibility(mode: CardVisibility): void {
+    this.visibility = mode
+    this.represent()
+    this.cache = undefined
+  }
+
+  /** A hidden card contributes nothing — but a FAILURE is never hidden. */
+  private isHidden(): boolean { return this.visibility === 'hidden' && !this.failed }
+
   /** Content lines (logical, pre-wrap) for the mount-cap accounting. */
-  contentLineCount(): number { return 1 + this.presented.length + this.mdSourceLines }
+  contentLineCount(): number {
+    return this.isHidden() ? 0 : 1 + this.presented.length + this.mdSourceLines + this.extra.length
+  }
 
   /** Mutate in place on tool/result: the head takes its settled glyph and
    * outcome tone, the body comes from this class's builder. */
   settle(result: ToolResult): void {
     this.result = result
     const body = TOOL_BODY_BUILDERS[classifyTool(this.call.name)](this.call, result, this.palette)
+    this.body = body
     this.failed = result.isError || body.failed === true
-    this.presented = this.failed ? body.lines : foldPreview(body.lines, this.palette)
     if (body.markdown === undefined) { this.md = undefined; this.mdSourceLines = 0 }
     else {
       const source = displayText(body.markdown)     // escape BEFORE the parser sees it (D7.8 order)
       this.md = new Markdown(source, 0, 0, markdownTheme(this.palette))
       this.mdSourceLines = source.split('\n').length
     }
+    this.represent()
     this.cache = undefined
+  }
+
+  /** The body as it currently presents. Built ONCE per settle and only
+   * re-folded here, so cycling Ctrl+O never re-runs a class builder (and the
+   * diff walk behind it). */
+  private represent(): void {
+    const body = this.body
+    if (body === undefined) return                 // still pending: the running line stands
+    const whole = this.failed || this.visibility === 'expanded'
+    this.presented = whole ? body.lines : foldPreview(body.lines, this.palette)
+    // The raw arguments come LAST, under whatever the body rendered.
+    this.extra = whole ? body.expanded ?? [] : []
   }
 
   invalidate(): void { this.cache = undefined }
 
   render(width: number): string[] {
+    if (this.isHidden()) return NO_ROWS
     if (this.result === undefined) return this.renderLines(width)   // live tail: content still changing
     if (this.cache?.width !== width) this.cache = { width, lines: this.renderLines(width) }
     return this.cache.lines
@@ -470,8 +516,9 @@ export class ToolCardCell implements Component {
     if (this.md !== undefined) {
       // Markdown wraps and pads its own rows to `safe` — never re-wrap them.
       const prose = this.md.render(safe)
-      rows.push(...this.failed ? prose : foldPreview(prose, this.palette))
+      rows.push(...this.failed || this.visibility === 'expanded' ? prose : foldPreview(prose, this.palette))
     }
+    rows.push(...this.extra.flatMap((row) => wrapPlain(row, safe)))
     return rows
   }
 

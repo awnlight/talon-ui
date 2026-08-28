@@ -18,7 +18,7 @@ import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
-import { commandArg } from '../ui/transcript/tool-cards.js'
+import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
 /** The slice of dsh's `Agent` the UI drives. Named (Task 16) because the
@@ -101,6 +101,8 @@ const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
 const WORKSPACE_UNSET = 'cwd unset'
+/** Ctrl+O's cycle order (spec §4.2). */
+const NEXT_CARD_VISIBILITY: Record<CardVisibility, CardVisibility> = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' }
 
 /**
  * Build a value shaped like dsh's real `UserMessage` (id/role/content/source)
@@ -479,6 +481,14 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       // not a stale mirror — and it is ephemeral: never persisted, never
       // logged (spec §3.10).
       transcript.setShowReasoning(!transcript.reasoningShown())
+      tui.requestRender()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+o')) {
+      // Transcript-wide card visibility (spec §4.2): collapsed → expanded →
+      // hidden → collapsed. Ephemeral, exactly like Ctrl+R: never persisted,
+      // never logged (§3.10).
+      transcript.setCardVisibility(NEXT_CARD_VISIBILITY[transcript.cardsShown()])
       tui.requestRender()
       return { consume: true }
     }

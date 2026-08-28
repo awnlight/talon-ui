@@ -305,6 +305,46 @@ describe('controller', () => {
     expect(terminal.snapshot()).toContain('weighing it')
     await controller.dispose()
   })
+  it('Ctrl+O cycles card visibility transcript-wide: collapsed → expanded → hidden (spec §4.2)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'mcp__x__y', arguments: '{"q":"a"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: Array.from({ length: 10 }, (_, i) => `row ${i}`).join('\n') }] }] } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('more lines')          // collapsed: the fold
+
+    before = terminal.frames
+    terminal.input('\x0f')                                       // expanded: the whole body
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('more lines')
+    expect(terminal.snapshot()).toContain('row 9')
+
+    before = terminal.frames
+    terminal.input('\x0f')                                       // hidden: the card is gone
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('mcp__x__y')
+
+    before = terminal.frames
+    terminal.input('\x0f')                                       // back to collapsed
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('more lines')
+    await controller.dispose()
+  })
+
+  it('Ctrl+O is suspended while a panel is active (spec D5)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'mcp__x__y', arguments: '{"q":"a"}' } })
+    await terminal.waitForFrame(before)
+    void controller.panels.enqueue({ create: () => new Text('panel', 0, 0), forced: () => ({ outcome: undefined }) })
+    terminal.input('\x0f')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(terminal.snapshot()).toContain('mcp__x__y')
+    await controller.dispose()
+  })
+
   it('Ctrl+R is suspended while a panel is active (spec D5)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)

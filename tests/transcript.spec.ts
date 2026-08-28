@@ -270,3 +270,180 @@ describe('Transcript reasoning visibility (Ctrl+R, spec §6)', () => {
     expect(accounted(t)).toBe(registered(t))
   })
 })
+
+describe('Transcript Ctrl+O card visibility (spec §4.2, ephemeral per §3.10)', () => {
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+  const rows = (t: Transcript): string[] => t.container.render(80)
+  const call = (callId: string, name: string, args: unknown): AppEvent =>
+    ({ kind: 'tool-call-card', turn: 1, step: 1, callId, name, args, rawArguments: JSON.stringify(args) })
+  const result = (callId: string, over: Partial<Extract<AppEvent, { kind: 'tool-result-card' }>> = {}): AppEvent =>
+    ({ kind: 'tool-result-card', callId, isError: false, errorCode: undefined, resultText: 'out', meta: undefined, ...over })
+
+  /** A turn whose steps interleave text and a tool call — the shape the
+   * hidden-mode fold exists for. */
+  const codingTurn = (t: Transcript): void => {
+    t.apply({ kind: 'user-message', text: 'go' })
+    t.apply({ kind: 'turn-start', turn: 1 })
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'Looking at the file.' }] })
+    t.apply(call('c1', 'mcp__x', { q: 'a' }))
+    t.apply(result('c1', { resultText: 'a\nb\nc' }))
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'Done — renamed.' }] })
+  }
+
+  it('starts collapsed and reports the mode the controller cycles', () => {
+    const t = new Transcript(p)
+    expect(t.cardsShown()).toBe('collapsed')
+    t.setCardVisibility('expanded')
+    expect(t.cardsShown()).toBe('expanded')
+  })
+
+  it('hides every card AND the blank row it brought with it', () => {
+    const t = new Transcript(p)
+    codingTurn(t)
+    t.setCardVisibility('hidden')
+    const out = rows(t)
+    expect(out.join('\n')).not.toContain('mcp__x')
+    expect(out.some((row, i) => row === '' && out[i + 1] === '')).toBe(false)  // no run of orphaned spacers
+    expect(accounted(t)).toBe(out.length)
+  })
+
+  it('folds a multi-step turn under ONE assistant header in hidden mode, and restores both on the way back', () => {
+    const t = new Transcript(p)
+    codingTurn(t)
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(2)
+
+    t.setCardVisibility('hidden')
+    const folded = rows(t)
+    expect(folded.filter((row) => row.includes('talon')).length).toBe(1)
+    expect(folded.join('\n')).toContain('Looking at the file.')
+    expect(folded.join('\n')).toContain('Done — renamed.')
+
+    t.setCardVisibility('collapsed')
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(2)
+  })
+
+  it('renders a tool-only step as nothing at all in hidden mode', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'turn-start', turn: 1 })
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'tool-call', text: undefined }] })
+    t.apply(call('c1', 'mcp__x', { q: 'a' }))
+    t.apply(result('c1'))
+    t.setCardVisibility('hidden')
+    expect(rows(t)).toEqual([])
+    expect(accounted(t)).toBe(0)
+
+    // …and the NEXT step of that turn still gets its header: nothing printed one.
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'Done.' }] })
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(1)
+  })
+
+  it('a visible cell between two steps ends the fold run — the header comes back', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'first' }] })
+    t.apply({ kind: 'notice', notice: { text: 'Turn cancelled.', tone: 'warning' } })
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'second' }] })
+    t.setCardVisibility('hidden')
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(2)
+  })
+
+  it('a failed card stays visible in hidden mode and ends the fold run', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'first' }] })
+    t.apply(call('c1', 'mcp__x', { q: 'a' }))
+    t.apply(result('c1', { isError: true, errorCode: 'boom', resultText: 'it failed' }))
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'second' }] })
+    t.setCardVisibility('hidden')
+    const out = rows(t).join('\n')
+    expect(out).toContain('it failed')
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(2)
+  })
+
+  it('cards appended while hidden come in hidden, and adopt the mode when it changes', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'go' })
+    t.setCardVisibility('hidden')
+    t.apply(call('c1', 'mcp__x', { q: 'a' }))
+    t.apply(result('c1'))
+    expect(rows(t).join('\n')).not.toContain('mcp__x')
+    expect(accounted(t)).toBe(rows(t).length)
+
+    t.setCardVisibility('expanded')
+    expect(rows(t).join('\n')).toContain('mcp__x')
+    expect(accounted(t)).toBe(rows(t).length)
+  })
+
+  it('carries context cards through the cycle (T2 carryover 11)', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'context-card', label: 'skill-catalog', summary: undefined, text: 'writing-plans\nexecuting-plans' })
+    expect(rows(t)).toEqual(['◇ context · skill-catalog · 2 lines'])
+    t.setCardVisibility('expanded')
+    expect(rows(t)).toEqual(['◇ context · skill-catalog · 2 lines', 'writing-plans', 'executing-plans'])
+    t.setCardVisibility('hidden')
+    expect(rows(t)).toEqual([])
+  })
+
+  it('keeps the mount-cap accounting exact through every mode, and keeps trimming', () => {
+    const t = new Transcript(p)
+    codingTurn(t)
+    for (const mode of ['expanded', 'hidden', 'collapsed'] as const) {
+      t.setCardVisibility(mode)
+      expect(accounted(t), mode).toBe(rows(t).length)
+    }
+    const capped = new Transcript(p, { mountCapLines: 12 })
+    for (let i = 0; i < 10; i++) capped.apply({ kind: 'user-message', text: `msg ${i}` })
+    capped.setCardVisibility('expanded')
+    expect(accounted(capped)).toBeLessThanOrEqual(12 + 2)
+    expect(rows(capped)[0]).toContain('earlier history not shown')
+  })
+})
+
+describe('Transcript Ctrl+O, the remaining shapes', () => {
+  const accounted = (t: Transcript): number => (t as unknown as { mountedLineCount: number }).mountedLineCount
+  const rows = (t: Transcript): string[] => t.container.render(80)
+
+  it('counts an approval audit line through a reflow', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'approval-asked', id: 'a1', toolName: 'bash' })
+    t.apply({ kind: 'approval-decided', id: 'a1', outcome: 'allowed-once' })
+    t.setCardVisibility('hidden')
+    expect(rows(t)).toEqual(['◆ approval · bash · allowed once'])
+    expect(accounted(t)).toBe(1)
+  })
+
+  it('re-deciding the header on every delta leaves the owning cell alone', () => {
+    const t = new Transcript(p)
+    t.setCardVisibility('hidden')
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'one ' })
+    t.apply({ kind: 'stream-delta', turn: 1, step: 1, index: 0, block: 'text', text: 'two' })
+    const out = rows(t)
+    expect(out.filter((row) => row.includes('talon')).length).toBe(1)   // not dropped by its own re-check
+    expect(out.join('\n')).toContain('one two')
+    expect(accounted(t)).toBe(out.length)
+  })
+
+  it('forgets the header owner the mount cap evicted, so the next step prints one', () => {
+    const t = new Transcript(p, { mountCapLines: 8 })
+    t.setCardVisibility('hidden')
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'text', text: 'first' }] })
+    for (let i = 0; i < 6; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })
+    expect(rows(t).join('\n')).not.toContain('first')                 // the owner is gone
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'second' }] })
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(1)
+  })
+
+  it('a reasoning-only step counts as body while Ctrl+R shows reasoning, and stops when it does not', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'stream-settle', turn: 1, step: 1, content: [{ type: 'reasoning', text: 'weighing it' }] })
+    t.apply({ kind: 'stream-settle', turn: 1, step: 2, content: [{ type: 'text', text: 'answer' }] })
+    t.setCardVisibility('hidden')
+    expect(rows(t).filter((row) => row.includes('talon')).length).toBe(1)   // step 1 owns the header
+    expect(rows(t).join('\n')).toContain('weighing it')
+
+    t.setShowReasoning(false)
+    t.setCardVisibility('hidden')                                           // re-derive with reasoning gone
+    const out = rows(t)
+    expect(out.join('\n')).not.toContain('weighing it')
+    expect(out.filter((row) => row.includes('talon')).length).toBe(1)       // now step 2 owns it
+    expect(accounted(t)).toBe(out.length)
+  })
+})

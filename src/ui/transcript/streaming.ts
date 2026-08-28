@@ -41,7 +41,25 @@ export class StreamingAssistantCell implements Component {
   // reports the difference.
   private reasoningLines = 0
 
-  constructor(private readonly palette: Palette, private showReasoning = true) {}
+  // Hidden mode folds a multi-step turn under ONE header and drops a step that
+  // produced no text at all (spec §4.2, the old TUI's fold fix). The TRANSCRIPT
+  // decides — the rule is about the cells AROUND this one — and sets it here.
+  private headerVisible = true
+
+  constructor(private readonly palette: Palette, private showReasoning = true, readonly turn = 0) {}
+
+  /** Whether this cell renders any body rows at all right now (hidden
+   * reasoning does not count): what makes a tool-only step render nothing. */
+  hasBody(): boolean {
+    return this.presentedParts().some((part) => part.block === 'text' || this.showReasoning)
+  }
+
+  /** Set by the transcript's ordered pass; ephemeral like every Ctrl+O state. */
+  setHeaderVisible(show: boolean): void {
+    if (this.headerVisible === show) return
+    this.headerVisible = show
+    this.cache = undefined
+  }
 
   update(delta: { index: number; block: 'text' | 'reasoning'; text: string }): void {
     if (this.settled) return
@@ -79,7 +97,10 @@ export class StreamingAssistantCell implements Component {
   /** Current mounted line count, kept in sync with render()'s output shape
    * without rendering (I3's O(1) mount-cap accounting) — hidden reasoning is
    * not rendered, so it does not count. */
-  lineCount(): number { return this.showReasoning ? this.lines : this.lines - this.reasoningLines }
+  lineCount(): number {
+    const body = (this.showReasoning ? this.lines : this.lines - this.reasoningLines) - 1
+    return body + (this.headerVisible ? 1 : 0)
+  }
 
   /** Ctrl+R's transcript-wide toggle, applied as a MUTATOR rather than a
    * render argument: the flag flips, the width cache goes, and lineCount()
@@ -112,7 +133,7 @@ export class StreamingAssistantCell implements Component {
   }
 
   private renderLines(width: number): string[] {
-    const lines: string[] = [messageHeader('talon', this.palette.accent, this.palette)]
+    const lines: string[] = this.headerVisible ? [messageHeader('talon', this.palette.accent, this.palette)] : []
     let mdRows: string[] | undefined
     for (const part of this.presentedParts()) {
       if (part.block === 'reasoning') {

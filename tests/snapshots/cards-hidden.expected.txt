@@ -1,0 +1,18 @@
+terminal 72x18 buffer=normal length=21 base=3 viewport=3
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @5,0
+0| "You"
+  style 0-2 bold underline
+1| "Rename the flag."
+2| <blank>
+3| "talon"
+  style 0-4 fg-13 bold underline
+4| "Looking at the flag."
+5| <blank>
+6| "Renamed it."
+7| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+8| <blank>
+9| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+10-20| <blank>

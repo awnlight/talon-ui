@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -464,6 +464,65 @@ describe('talon snapshots', () => {
     send('tool/result', { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: '# writing-plans\n\n- state the goal\n- **verify** each step' }] }] } })
     await terminal.waitForFrame(before)
     await checkpoint('card-generic', terminal)
+
+    await controller.dispose()
+  })
+
+  /** One coding turn — text, a tool call, more text, plus injected context —
+   * driven through the SAME events for both visibility goldens below, so the
+   * pair reads as one Ctrl+O sequence rather than two unrelated frames. */
+  const visibilityTurn = (send: (type: string, data: unknown) => void) => {
+    send('user/message', { content: [{ type: 'text', text: 'Rename the flag.' }] })
+    send('user/message', { content: [{ type: 'text', text: 'writing-plans\nexecuting-plans' }], source: { kind: 'skill-catalog', form: 'catalog' } })
+    send('turn/start', { turn: 1 })
+    send('assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Looking at the flag.' }] } })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"src/flags.ts","offset":9}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '9\tconst flags' }] }] },
+      meta: { path: 'src/flags.ts', offset: 9, totalLines: 120, lang: 'typescript', lines: [
+        { number: 9, text: 'export const flags = {' },
+        { number: 10, text: '  modern: true,' },
+        { number: 11, text: '}' },
+      ] },
+    })
+    send('assistant/message', { turn: 1, step: 2, message: { content: [{ type: 'text', text: 'Renamed it.' }] } })
+    send('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  }
+
+  it('cards-expanded', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(22)
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    visibilityTurn(send)
+    await terminal.waitForFrame(before)
+
+    before = terminal.frames
+    terminal.input('\x0f')          // Ctrl+O once: expanded — the context body appears too
+    await terminal.waitForFrame(before)
+    await checkpoint('cards-expanded', terminal)
+
+    await controller.dispose()
+  })
+
+  it('cards-hidden', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    visibilityTurn(send)
+    await terminal.waitForFrame(before)
+
+    // Twice: expanded, then hidden — the card and the context card vanish, the
+    // two steps of the turn fold under ONE talon header, and no orphaned blank
+    // rows are left where the cards were.
+    for (const _ of [0, 1]) {
+      before = terminal.frames
+      terminal.input('\x0f')
+      await terminal.waitForFrame(before)
+    }
+    await checkpoint('cards-hidden', terminal)
 
     await controller.dispose()
   })

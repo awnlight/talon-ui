@@ -2,12 +2,12 @@
  * D10): when total rendered lines exceed the cap, oldest cells unmount and
  * one dim marker takes their place — bounds full-redraw cost and initial
  * layout; the session log stays complete. */
-import { Container, Spacer, Text, type Component } from '@earendil-works/pi-tui'
+import { Container, Text, type Component } from '@earendil-works/pi-tui'
 import type { AppEvent } from '../../backend/app-events.js'
 import type { Palette } from '../../theme/palette.js'
-import { ApprovalAuditCell, ContextCardCell, NoticeCell, UserMessageCell } from './cells.js'
+import { ApprovalAuditCell, ContextCardCell, NoticeCell, SpacerCell, UserMessageCell } from './cells.js'
 import { StreamingAssistantCell } from './streaming.js'
-import { ORPHAN_CARD_NAME, ToolCardCell } from './tool-cards.js'
+import { ORPHAN_CARD_NAME, ToolCardCell, type CardVisibility } from './tool-cards.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
 
@@ -16,7 +16,6 @@ const TRIM_MARKER = '… earlier history not shown …'
 // contentLineCount()/lineCount(); Spacer(1) is always one line. Wrapping
 // multiplies visual rows by a modest factor at render time, so the cap
 // bounds O(total) as D10 intends without trim() ever rendering anything.
-const SPACER_LINES = 1 // Spacer(1)
 
 export class Transcript {
   readonly container = new Container()
@@ -32,6 +31,12 @@ export class Transcript {
   // Ctrl+R's transcript-wide reasoning visibility (spec §6). Ephemeral UI
   // state: never persisted, never logged, never part of an AppEvent (§3.10).
   private showReasoning = true
+  // Ctrl+O's transcript-wide card visibility (spec §4.2), ephemeral like
+  // Ctrl+R's. `headerTurn`/`headerOwner` carry the hidden-mode fold: which
+  // turn has already printed an assistant header, and which cell owns it.
+  private cardVisibility: CardVisibility = 'collapsed'
+  private headerTurn: number | undefined
+  private headerOwner: StreamingAssistantCell | undefined
   // approval-asked carries no audit text of its own — it only tells the
   // matching approval-decided which tool it was asked about (spec D9's
   // replay-safe id correlation; the pair need not be contiguous).
@@ -51,6 +56,54 @@ export class Transcript {
   /** What Ctrl+R flips (read by the controller's key handler). */
   reasoningShown(): boolean { return this.showReasoning }
 
+  /** What Ctrl+O cycles (read by the controller's key handler). */
+  cardsShown(): CardVisibility { return this.cardVisibility }
+
+  /** Ctrl+O: apply the mode to every card, then re-derive the whole layout in
+   * ONE ordered pass — hidden-mode header folding, spacer suppression and the
+   * mount-cap total all depend on what the cells around each cell now show. */
+  setCardVisibility(mode: CardVisibility): void {
+    this.cardVisibility = mode
+    for (const child of this.container.children) {
+      if (child instanceof ToolCardCell || child instanceof ContextCardCell) child.setVisibility(mode)
+    }
+    this.reflow()
+  }
+
+  private reflow(): void {
+    this.headerTurn = undefined
+    this.headerOwner = undefined
+    this.mountedLineCount = this.marker === undefined ? 0 : 1
+    let spacer: SpacerCell | undefined
+    let shownSomething = false
+    for (const child of this.container.children) {
+      if (child === this.marker) continue
+      if (child instanceof SpacerCell) { spacer = child; continue }
+      if (child instanceof StreamingAssistantCell) this.applyHeader(child)
+      const lines = this.lineCountOf(child)
+      if (lines > 0 && !(child instanceof StreamingAssistantCell)) this.headerTurn = undefined
+      // A blank row is earned only BETWEEN two visible cells: an invisible
+      // cell takes its spacer with it, or hidden mode would be a blank screen.
+      const keep = lines > 0 && shownSomething
+      spacer?.setHidden(!keep)
+      this.mountedLineCount += (keep ? 1 : 0) + lines
+      shownSomething ||= lines > 0
+      spacer = undefined
+    }
+    this.trim()
+  }
+
+  /** Hidden mode folds a multi-step turn under ONE assistant header and drops
+   * a step that produced no text at all (spec §4.2, the old TUI's fold fix).
+   * O(1), so the live path can call it on every delta. */
+  private applyHeader(cell: StreamingAssistantCell): void {
+    if (this.cardVisibility !== 'hidden') { cell.setHeaderVisible(true); return }
+    if (this.headerOwner === cell) return          // already owns this turn's header
+    const show = cell.hasBody() && this.headerTurn !== cell.turn
+    cell.setHeaderVisible(show)
+    if (show) { this.headerTurn = cell.turn; this.headerOwner = cell }
+  }
+
   /** Propagates the toggle to every mounted streaming cell as a mutator, and
    * re-registers each cell's line-count delta — hidden reasoning rows are not
    * rendered, so mountedLineCount stays equal to the sum of the registered
@@ -69,41 +122,44 @@ export class Transcript {
   apply(event: AppEvent): void {
     switch (event.kind) {
       case 'user-message':
-        this.spaceBeforeNewCell()
-        { const c = new UserMessageCell(event.text, this.palette); this.addChild(c, c.contentLineCount()) }
+        { const c = new UserMessageCell(event.text, this.palette); this.appendCell(c, c.contentLineCount()) }
         break
       case 'context-card':
-        this.spaceBeforeNewCell()
-        { const c = new ContextCardCell(event.label, event.summary, event.lines, this.palette); this.addChild(c, c.contentLineCount()) }
+        {
+          const c = new ContextCardCell(event.label, event.summary, event.text, this.palette)
+          c.setVisibility(this.cardVisibility)
+          this.appendCell(c, c.contentLineCount())
+        }
         break
       case 'stream-delta': {
-        const cell = this.cell(`${event.turn}:${event.step}`)
+        const cell = this.cell(`${event.turn}:${event.step}`, event.turn)
         const before = cell.lineCount()
         cell.update(event)
+        this.applyHeader(cell)          // content just arrived: the fold may change
         this.mountedLineCount += cell.lineCount() - before
         break
       }
       case 'stream-settle': {
         const key = `${event.turn}:${event.step}`
-        const cell = this.cell(key)
+        const cell = this.cell(key, event.turn)
         if (cell.isSettled()) {
           // A settled cell never re-absorbs a later message (replay-parity fix): new cell.
-          this.spaceBeforeNewCell()
-          const fresh = new StreamingAssistantCell(this.palette, this.showReasoning)
+          const fresh = new StreamingAssistantCell(this.palette, this.showReasoning, event.turn)
           fresh.settle(event.content)
-          this.addChild(fresh, fresh.lineCount())
+          this.applyHeader(fresh)
+          this.appendCell(fresh, fresh.lineCount())
           this.live = { key, cell: fresh }
         } else {
           const before = cell.lineCount()
           cell.settle(event.content)
+          this.applyHeader(cell)
           this.mountedLineCount += cell.lineCount() - before
         }
         break
       }
       case 'turn-end':
         if (event.notice) {
-          this.spaceBeforeNewCell()
-          { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
+          const c = new NoticeCell(event.notice, this.palette); this.appendCell(c, c.contentLineCount())
         }
         this.live = undefined
         this.pendingCards.clear() // a call with no result keeps its ◇ head: that is what the log says happened
@@ -111,9 +167,9 @@ export class Transcript {
       case 'turn-start': case 'step-start': case 'step-end':
         break
       case 'tool-call-card': {
-        this.spaceBeforeNewCell()
         const c = new ToolCardCell({ callId: event.callId, name: event.name, args: event.args, rawArguments: event.rawArguments }, this.palette)
-        this.addChild(c, c.contentLineCount())
+        c.setVisibility(this.cardVisibility)
+        this.appendCell(c, c.contentLineCount())
         this.pendingCards.set(event.callId, c)
         break
       }
@@ -128,10 +184,10 @@ export class Transcript {
         } else {
           // No mounted call to settle — render the result on its own settled
           // card rather than dropping it (the log is the truth).
-          this.spaceBeforeNewCell()
           const orphan = new ToolCardCell({ callId: event.callId, name: ORPHAN_CARD_NAME, args: undefined, rawArguments: '' }, this.palette)
+          orphan.setVisibility(this.cardVisibility)
           orphan.settle(result)
-          this.addChild(orphan, orphan.contentLineCount())
+          this.appendCell(orphan, orphan.contentLineCount())
         }
         break
       }
@@ -141,27 +197,23 @@ export class Transcript {
       case 'approval-decided': {
         const tool = this.askedTools.get(event.id) ?? '(unknown tool)'
         this.askedTools.delete(event.id)
-        this.spaceBeforeNewCell()
         const c = new ApprovalAuditCell(tool, event.outcome, this.palette)
-        this.addChild(c, c.contentLineCount())
+        this.appendCell(c, c.contentLineCount())
         break
       }
       case 'command-run': {
-        this.spaceBeforeNewCell()
         const c = new NoticeCell({ text: `/${event.name}${event.args === undefined ? '' : ` ${event.args}`}`, tone: 'info' }, this.palette)
-        this.addChild(c, c.contentLineCount())
+        this.appendCell(c, c.contentLineCount())
         break
       }
       case 'command-done':
         if (event.text !== undefined && event.text !== '') {
-          this.spaceBeforeNewCell()
           const c = new NoticeCell({ text: event.text, tone: event.result === 'error' ? 'error' : 'info' }, this.palette)
-          this.addChild(c, c.contentLineCount())
+          this.appendCell(c, c.contentLineCount())
         }
         break
       case 'notice':
-        this.spaceBeforeNewCell()
-        { const c = new NoticeCell(event.notice, this.palette); this.addChild(c, c.contentLineCount()) }
+        { const c = new NoticeCell(event.notice, this.palette); this.appendCell(c, c.contentLineCount()) }
         break
     }
     this.trim()
@@ -172,17 +224,25 @@ export class Transcript {
     this.mountedLineCount += lines
   }
 
-  /** One rule, four former call sites: every new cell is preceded by a
-   * one-line spacer unless it is the very first child (spec §4.1 spacing). */
-  private spaceBeforeNewCell(): void {
-    if (this.container.children.length > 0) this.addChild(new Spacer(1), SPACER_LINES)
+  /** One rule, every call site: a new cell is preceded by a one-line spacer
+   * unless it is the first child, or unless one of the two cells the spacer
+   * would separate is invisible (hidden mode, spec §4.1 spacing). The spacer
+   * is mounted either way — a later Ctrl+O reflow can bring it back. */
+  private appendCell(cell: Component, lines: number): void {
+    if (this.container.children.length > 0) {
+      const spacer = new SpacerCell()
+      spacer.setHidden(lines === 0 || this.mountedLineCount === 0)
+      this.addChild(spacer, spacer.contentLineCount())
+    }
+    if (lines > 0 && !(cell instanceof StreamingAssistantCell)) this.headerTurn = undefined
+    this.addChild(cell, lines)
   }
 
-  private cell(key: string): StreamingAssistantCell {
+  private cell(key: string, turn: number): StreamingAssistantCell {
     if (this.live?.key !== key) {
-      this.spaceBeforeNewCell()
-      const cell = new StreamingAssistantCell(this.palette, this.showReasoning)
-      this.addChild(cell, cell.lineCount())
+      const cell = new StreamingAssistantCell(this.palette, this.showReasoning, turn)
+      this.applyHeader(cell)
+      this.appendCell(cell, cell.lineCount())
       this.live = { key, cell }
     }
     return this.live.cell
@@ -195,6 +255,7 @@ export class Transcript {
       if (!first) break
       this.container.removeChild(first)
       if (first instanceof ToolCardCell) this.pendingCards.delete(first.callId)
+      if (first === this.headerOwner) { this.headerOwner = undefined; this.headerTurn = undefined }
       this.mountedLineCount -= this.lineCountOf(first)
       if (!this.marker) {
         this.marker = new Text(this.palette.dim(TRIM_MARKER), 0, 0)
@@ -206,8 +267,9 @@ export class Transcript {
 
   private lineCountOf(c: Component): number {
     if (c instanceof StreamingAssistantCell) return c.lineCount()
-    if (c instanceof ToolCardCell) return c.contentLineCount()
+    if (c instanceof ToolCardCell || c instanceof ContextCardCell) return c.contentLineCount()
     if (c instanceof UserMessageCell || c instanceof NoticeCell) return c.contentLineCount()
-    return SPACER_LINES // the only remaining child type trim() ever removes
+    if (c instanceof SpacerCell) return c.contentLineCount()
+    return 1 // ApprovalAuditCell and the trim marker are one line each
   }
 }

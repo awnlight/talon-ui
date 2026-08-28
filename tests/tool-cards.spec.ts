@@ -659,3 +659,75 @@ describe('unregistered tool card (D13)', () => {
     expect(empty.render(80)).toEqual(['◆ mcp__x__y'])
   })
 })
+
+describe('Ctrl+O tri-state on one card (spec §4.2, ephemeral per §3.10)', () => {
+  const long = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n')
+
+  it('collapsed folds, expanded shows the whole body, hidden removes the card entirely', () => {
+    const cell = plain({ name: 'x' })
+    cell.settle(ok(long))
+    expect(cell.render(80).length).toBe(1 + 7)
+    expect(cell.contentLineCount()).toBe(8)
+
+    cell.setVisibility('expanded')
+    expect(cell.render(80).length).toBe(1 + 10)
+    expect(cell.contentLineCount()).toBe(11)
+
+    cell.setVisibility('hidden')
+    expect(cell.render(80)).toEqual([])
+    expect(cell.contentLineCount()).toBe(0)
+
+    cell.setVisibility('collapsed')
+    expect(cell.render(80).length).toBe(1 + 7)
+  })
+
+  it('a FAILED card ignores every mode — it is always whole and never hidden', () => {
+    const cell = plain({ name: 'x' })
+    cell.settle(failed(long))
+    for (const mode of ['collapsed', 'expanded', 'hidden'] as const) {
+      cell.setVisibility(mode)
+      expect(cell.render(80).length, mode).toBe(1 + 10)
+      expect(cell.contentLineCount(), mode).toBe(11)
+    }
+  })
+
+  it('hides a card that is still pending, and brings it back', () => {
+    const cell = plain({ name: 'x' })
+    cell.setVisibility('hidden')
+    expect(cell.render(80)).toEqual([])
+    expect(cell.contentLineCount()).toBe(0)
+    cell.setVisibility('collapsed')
+    expect(cell.render(80)).toEqual(['◇ mcp__notes__list · x', '└ running…'])
+  })
+
+  it('expands a markdown body by rendered rows, and appends the raw arguments literally', () => {
+    const source = ['```ts', ...Array.from({ length: 12 }, (_, i) => `const l${i} = ${i}`), '```'].join('\n')
+    const cell = card('skill', { name: 'x' })
+    cell.settle(ok(source))
+    expect(cell.render(40).length).toBe(1 + 7)
+
+    cell.setVisibility('expanded')
+    const rows = cell.render(40)
+    expect(rows.length).toBeGreaterThan(1 + 7)                     // the whole fence, not a fold
+    expect(rows.at(-1)).toBe('{"name":"x"}')                       // the model's own JSON, literal
+    expect(rows.some((row) => row.includes('more lines'))).toBe(false)
+  })
+
+  it('re-folding never re-runs the class builder — the diff walk stays cached by identity', () => {
+    const cell = card('edit', { file_path: 'a.ts' })
+    cell.settle({ isError: false, errorCode: undefined, resultText: 'ok', meta: { diffs: [{ path: 'a.ts', oldText: 'x', newText: 'y' }] } })
+    const collapsed = cell.render(80)
+    cell.setVisibility('expanded')
+    cell.setVisibility('collapsed')
+    expect(cell.render(80)).toEqual(collapsed)
+  })
+})
+
+describe('expanded card with nothing extra to reveal', () => {
+  it('omits the raw-arguments rows when the call recorded no arguments', () => {
+    const cell = new ToolCardCell({ callId: 'c1', name: 'skill', args: undefined, rawArguments: '' }, p)
+    cell.settle(ok('done'))
+    cell.setVisibility('expanded')
+    expect(cell.render(40).at(-1)).toContain('done')
+  })
+})
