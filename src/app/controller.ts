@@ -2,7 +2,6 @@
  * global keys + backend subscriptions. Async results re-enter through the
  * same handlers — no side-channel state (spec §2 data flow). */
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Container, matchesKey, TuiMainScreen, type Terminal } from '@earendil-works/pi-tui'
 import type { CommandDefinition, CommandDescriptor } from '@deepseek-ai/dsh-commands'
@@ -28,6 +27,7 @@ import { AgentsPanel, type AgentEntry } from '../ui/panels/agents-panel.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { Notifier } from '../ui/notify.js'
+import { abbreviateHome } from '../ui/paths.js'
 import { DEFAULT_TITLE, TerminalTitle } from '../ui/terminal-title.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
@@ -129,13 +129,6 @@ const GOODBYE = (sessionId: string): string => `To resume: dsh --profile talon, 
 const RESUME_RUNNING = 'Resume is not available while a turn is running.'
 /** The live compaction indicator (spec §4.1). */
 const COMPACTING = (seconds: number): string => `Context being compacted ${seconds}s`
-
-/** `~`-abbreviate the home prefix, exactly as the terminal card does. */
-function abbreviateHome(path: string): string {
-  const home = homedir()
-  if (path === home) return '~'
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
-}
 
 /** The current git branch, read ONCE per bind straight off `.git/HEAD` — no
  * watcher, no subprocess (spec §3.8). A detached HEAD, an unreadable file or
