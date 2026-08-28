@@ -107,8 +107,12 @@ export class ContextCardCell extends CachedCell {
   protected renderLines(width: number): string[] {
     if (this.visibility === 'hidden') return []
     const safe = Math.max(1, width)
-    const summary = this.summary === undefined ? '' : ` · ${displayText(this.summary)}`
-    const head = this.palette.dim(`◇ context · ${displayText(this.label)}${summary} · ${this.body.length} lines`)
+    // ONE scannable token per row: the label is the only part that differs
+    // between three injections, so it carries the terminal's own foreground
+    // while the fixed scaffolding around it stays dim. A row where every word
+    // is the same grey is a row nobody reads.
+    const summary = this.summary === undefined ? '' : this.palette.dim(` · ${displayText(this.summary)}`)
+    const head = `${this.palette.dim('◇ context · ')}${this.palette.text(displayText(this.label))}${summary}${this.palette.dim(` · ${this.body.length} lines`)}`
     const rows = [truncateToWidth(head, safe, '…')]
     if (this.visibility === 'expanded') rows.push(...this.body.flatMap((line) => wrapPlain(line, safe)).map((row) => this.palette.dim(row)))
     return rows

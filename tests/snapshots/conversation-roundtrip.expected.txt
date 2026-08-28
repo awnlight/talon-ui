@@ -1,23 +1,36 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @7,2
-0| "You"
+cursor hidden @14,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Rename the button."
-2| <blank>
-3| "talon"
+7| "Rename the button."
+8| <blank>
+9| "talon"
   style 0-4 fg-13 bold underline
-4| "Looking at the file."
+10| "Looking at the file."
   style 0-19 dim italic
-5| "Done — renamed."
-6| "────────────────────────────────────────────────────────────────────────"
+11| <blank>
+12| "Done — renamed."
+13| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-7| "❯"
+14| "❯"
   style 0-0 dim
   style 2-2 inverse
-8| "enter send · shift+enter newline · ctrl+c exit"
+15| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-9| "/workspace/talon-ui"
-  style 0-18 dim
-10-17| <blank>
+16| "talon-ui"
+17| <blank>

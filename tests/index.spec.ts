@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { apply, disposeRootAndExit, installProcessGuards, type Context } from '../src/index.ts'
+import { apply, disposeRootAndExit, installProcessGuards, type Context, readVersion } from '../src/index.ts'
 
 // Mirrors controller.spec.ts's fakeCtx style: a small helper returning just
 // the structural shape these functions actually touch (`ctx.root.fiber.
@@ -247,5 +247,18 @@ describe('installProcessGuards', () => {
       stderrSpy.mockRestore()
       exitSpy.mockRestore()
     }
+  })
+})
+
+describe("readVersion — the banner's version segment", () => {
+  it("reads talon's own version off package.json", () => {
+    expect(readVersion()).toMatch(/^\d+\.\d+\.\d+/u)
+  })
+  it('answers undefined rather than failing a boot over a banner', () => {
+    expect(readVersion(new URL('./no-such-manifest.json', import.meta.url))).toBeUndefined()
+    expect(readVersion(new URL('./index.spec.ts', import.meta.url))).toBeUndefined()   // present, not JSON
+  })
+  it('answers undefined when the manifest parses but carries no string version', () => {
+    expect(readVersion(new URL('../tsconfig.json', import.meta.url))).toBeUndefined()
   })
 })

@@ -1,39 +1,50 @@
-terminal 72x20 buffer=normal length=20 base=0 viewport=0
+terminal 72x20 buffer=normal length=25 base=5 viewport=5
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @16,2
-0| "You"
+cursor hidden @17,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "What changed upstream?"
-2| <blank>
-3| "◆ web_search · pi-tui release notes"
+7| "What changed upstream?"
+8| <blank>
+9| "◆ web_search · pi-tui release notes"
   style 0-34 fg-2
-4| "pi-tui 0.84.1"
-5| "  https://pi-tui.example/releases/0.84.1"
+10| "pi-tui 0.84.1"
+11| "  https://pi-tui.example/releases/0.84.1"
   style 0-39 dim
-6| "Release notes"
-7| "  https://pi-tui.example/blog"
+12| "Release notes"
+13| "  https://pi-tui.example/blog"
   style 0-28 dim
-8| "└ 2 sources"
+14| "└ 2 sources"
   style 0-10 dim
-9| <blank>
-10| "◆ skill · writing-plans"
+15| <blank>
+16| "◆ skill · writing-plans"
   style 0-22 fg-2
-11| "writing-plans"
+17| "writing-plans"
   style 0-12 bold underline
-12| <blank>
-13| "- state the goal"
+18| <blank>
+19| "- state the goal"
   style 0-1 dim
-14| "- verify each step"
+20| "- verify each step"
   style 0-1 dim
   style 2-7 bold
-15| "────────────────────────────────────────────────────────────────────────"
+21| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-16| "⚙"
+22| "⚙"
   style 0-0 dim
   style 2-2 inverse
-17| "enter send · shift+enter newline · ctrl+c exit"
+23| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-18| "/workspace/talon-ui"
-  style 0-18 dim
-19| <blank>
+24| "talon-ui"

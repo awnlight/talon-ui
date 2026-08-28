@@ -1,39 +1,51 @@
-terminal 72x18 buffer=normal length=18 base=0 viewport=0
+terminal 72x18 buffer=normal length=24 base=6 viewport=6
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @14,2
-0| "You"
+cursor hidden @15,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Show the fix."
-2| <blank>
-3| "talon"
+7| "Show the fix."
+8| <blank>
+9| "talon"
   style 0-4 fg-13 bold underline
-4| "Checking the diff."
+10| "Checking the diff."
   style 0-17 dim italic
-5| "Fix"
+11| <blank>
+12| "Fix"
   style 0-2 bold underline
-6| <blank>
-7| "```ts"
+13| <blank>
+14| "```ts"
   style 0-4 dim
-8| "  const n = 1 // count"
+15| "  const n = 1 // count"
   style 2-6 fg-6
   style 12-12 fg-3
   style 14-21 dim
-9| "```"
+16| "```"
   style 0-2 dim
-10| <blank>
-11| "- fast"
+17| <blank>
+18| "- fast"
   style 0-1 dim
-12| "- safe"
+19| "- safe"
   style 0-1 dim
   style 2-5 bold
-13| "────────────────────────────────────────────────────────────────────────"
+20| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-14| "❯"
+21| "❯"
   style 0-0 dim
   style 2-2 inverse
-15| "enter send · shift+enter newline · ctrl+c exit"
+22| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-16| "/workspace/talon-ui"
-  style 0-18 dim
-17| <blank>
+23| "talon-ui"

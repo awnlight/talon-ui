@@ -219,7 +219,7 @@ describe('Transcript reasoning visibility (Ctrl+R, spec §6)', () => {
     expect(hidden).not.toContain('still thinking')
     expect(hidden).toContain('settled answer')          // both cells keep their text
     expect(hidden).toContain('live answer')
-    expect(t.mountedLines(80)).toBe(shownRows - 3)      // 2 settled reasoning rows + 1 live one
+    expect(t.mountedLines(80)).toBe(shownRows - 5)      // 3 reasoning rows + the 2 separators they earned
 
     t.setShowReasoning(true)
     expect(render(t)).toBe(shown)
@@ -233,7 +233,7 @@ describe('Transcript reasoning visibility (Ctrl+R, spec §6)', () => {
     expect(before).toBe(registered(t))
 
     t.setShowReasoning(false)
-    expect(accounted(t)).toBe(before - 3)
+    expect(accounted(t)).toBe(before - 5)              // reasoning rows + the separators they earned
     expect(accounted(t)).toBe(registered(t))
 
     t.setShowReasoning(true)
@@ -600,5 +600,84 @@ describe('Transcript workflow cards (spec §3.9)', () => {
     for (const event of events) live.apply(event)
     for (const event of events) replay.apply(event)
     expect(live.container.render(80)).toEqual(replay.container.render(80))
+  })
+})
+
+describe('proximity: consecutive same-kind audit rows are ONE group (spec §4.1 spacing)', () => {
+  const contexts = (t: Transcript, ...labels: string[]): void => {
+    for (const label of labels) t.apply({ kind: 'context-card', label, summary: undefined, text: 'a\nb' })
+  }
+
+  it('drops the blank row BETWEEN context cards — three injections, not three events', () => {
+    const t = new Transcript(p)
+    contexts(t, 'agent-instructions', 'plugin', 'skill-catalog')
+    const rows = t.container.render(80)
+    expect(rows.filter((row) => row.trim() !== '')).toHaveLength(3)
+    expect(rows).toHaveLength(3)                       // no spacers at all
+  })
+
+  it('keeps the blank row where the kinds genuinely differ', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'hi' })
+    contexts(t, 'agent-instructions', 'plugin')
+    const rows = t.container.render(80)
+    // You + hi, blank, then the two grouped context rows.
+    expect(rows).toHaveLength(5)
+    expect(rows[2]).toBe('')
+    expect(rows[3]).toContain('agent-instructions')
+    expect(rows[4]).toContain('plugin')
+  })
+
+  it('groups a run of approval audit rows the same way', () => {
+    const t = new Transcript(p)
+    for (const [id, tool] of [['1', 'bash'], ['2', 'edit'], ['3', 'read']]) {
+      t.apply({ kind: 'approval-asked', id, toolName: tool })
+      t.apply({ kind: 'approval-decided', id, outcome: 'allowed-once' })
+    }
+    expect(t.container.render(80)).toHaveLength(3)
+  })
+
+  it('does NOT group across kinds — a context card and an approval row stay apart', () => {
+    const t = new Transcript(p)
+    contexts(t, 'plugin')
+    t.apply({ kind: 'approval-asked', id: '1', toolName: 'bash' })
+    t.apply({ kind: 'approval-decided', id: '1', outcome: 'rejected' })
+    const rows = t.container.render(80)
+    expect(rows).toHaveLength(3)
+    expect(rows[1]).toBe('')
+  })
+
+  it('survives a Ctrl+O reflow: hiding and restoring keeps the group closed', () => {
+    const t = new Transcript(p)
+    contexts(t, 'agent-instructions', 'plugin', 'skill-catalog')
+    t.setCardVisibility('hidden')
+    expect(t.container.render(80).filter((row) => row !== '')).toHaveLength(0)
+    t.setCardVisibility('collapsed')
+    expect(t.container.render(80)).toHaveLength(3)
+  })
+
+  it('handles a transcript with NOTHING visible left to group against', () => {
+    // Everything the trim marker did not eat is hidden by Ctrl+O, so the next
+    // cell has no visible predecessor at all — the group question has no
+    // subject, and the answer must be "not a group", not a crash.
+    const t = new Transcript(p, { mountCapLines: 1 })
+    for (const label of ['a', 'b', 'c']) t.apply({ kind: 'context-card', label, summary: undefined, text: 'x' })
+    t.setCardVisibility('hidden')
+    expect(t.container.render(80).filter((row) => row.trim() !== '')).toHaveLength(1)   // just the marker
+
+    t.apply({ kind: 'user-message', text: 'still here' })
+    expect(render(t)).toContain('still here')
+  })
+
+  it('closes ranks ACROSS a neighbour Ctrl+O made invisible', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'hi' })
+    contexts(t, 'agent-instructions')
+    t.apply({ kind: 'tool-call-card', callId: 'c1', name: 'bash', args: { command: 'ls' }, rawArguments: '{}' })
+    t.setCardVisibility('hidden')
+    contexts(t, 'plugin')
+    // The hidden tool card sits between the two context cards; they still group.
+    const rows = t.container.render(80).filter((row) => row !== '')
+    expect(rows.some((row) => row.includes('bash'))).toBe(false)
   })
 })

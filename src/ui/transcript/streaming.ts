@@ -40,6 +40,13 @@ export class StreamingAssistantCell implements Component {
   // Ctrl+R's toggle costs O(1): while reasoning is hidden lineCount() simply
   // reports the difference.
   private reasoningLines = 0
+  // The ONE blank row that separates a turn's reasoning from its reply (spec
+  // §4.1 spacing). Reasoning and answer are different KINDS of content — one
+  // is the model working, the other is the model speaking — and running them
+  // together with no gap made a turn read as one undifferentiated paragraph.
+  // Tracked incrementally rather than derived, because lineCount() is called
+  // on every delta and the perf law (I3) makes it O(1).
+  private separator = 0
 
   // Hidden mode folds a multi-step turn under ONE header and drops a step that
   // produced no text at all (spec §4.2, the old TUI's fold fix). The TRANSCRIPT
@@ -74,8 +81,12 @@ export class StreamingAssistantCell implements Component {
     // live Markdown (no throttle — the cell is uncached while live, so the
     // next render re-renders it). Reasoning deltas never touch markdown.
     if (delta.block === 'text') {
-      if (this.md === undefined) this.md = new Markdown(this.textSource(), 0, 0, markdownTheme(this.palette))
-      else this.md.setText(this.textSource())
+      if (this.md === undefined) {
+        // First text of the turn: it earns the separator only if reasoning
+        // already landed above it. `reasoningLines` is updated just above.
+        this.separator = this.reasoningLines > 0 ? 1 : 0
+        this.md = new Markdown(this.textSource(), 0, 0, markdownTheme(this.palette))
+      } else this.md.setText(this.textSource())
     }
   }
 
@@ -88,6 +99,10 @@ export class StreamingAssistantCell implements Component {
     const parts = this.presentedParts()
     this.lines = 1 + parts.reduce((n, p) => n + p.text.split('\n').length, 0)
     this.reasoningLines = parts.reduce((n, p) => (p.block === 'reasoning' ? n + p.text.split('\n').length : n), 0)
+    // Order matters, not mere presence: reasoning AFTER the reply separates
+    // nothing, so only reasoning that precedes the first text block counts.
+    const firstText = parts.findIndex((part) => part.block === 'text')
+    this.separator = firstText > 0 && parts.slice(0, firstText).some((part) => part.block === 'reasoning') ? 1 : 0
     // Wholesale replacement: a fresh Markdown from the authoritative blocks
     // (never trust the accumulation buffer, §5.3).
     this.md = new Markdown(this.textSource(), 0, 0, markdownTheme(this.palette))
@@ -98,7 +113,7 @@ export class StreamingAssistantCell implements Component {
    * without rendering (I3's O(1) mount-cap accounting) — hidden reasoning is
    * not rendered, so it does not count. */
   lineCount(): number {
-    const body = (this.showReasoning ? this.lines : this.lines - this.reasoningLines) - 1
+    const body = (this.showReasoning ? this.lines + this.separator : this.lines - this.reasoningLines) - 1
     return body + (this.headerVisible ? 1 : 0)
   }
 
@@ -142,6 +157,9 @@ export class StreamingAssistantCell implements Component {
         const rows = wrapPlain(displayText(part.text), width)
         lines.push(...rows.map((l) => this.palette.dim(this.palette.italic(l))))
       } else if (mdRows === undefined) {
+        // The separator: emitted only when reasoning actually rendered above
+        // this block, so Ctrl+R hiding reasoning takes the blank row with it.
+        if (lines.length > (this.headerVisible ? 1 : 0)) lines.push('')
         // Text, live or settled: the ONE Markdown holds every text block
         // joined, emitted at the first text part's position (a text part
         // implies md exists — update()/settle() constructed it). It wraps

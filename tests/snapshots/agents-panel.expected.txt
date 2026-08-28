@@ -1,25 +1,37 @@
 terminal 76x16 buffer=normal length=16 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @9,0
-0| <blank>
-1| "─ agents ───────────────────────────────────────────────────────────────────"
+cursor hidden @14,0
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "─ agents ───────────────────────────────────────────────────────────────────"
   style 0-75 dim
-2| "◇ reviewer · continuable · s-review"
+7| "◇ reviewer · continuable · s-review"
   style 0-9 fg-3
   style 10-34 dim
-3| "  ◆ grep pass · one-shot · s-grep"
+8| "  ◆ grep pass · one-shot · s-grep"
   style 2-12 fg-2
   style 13-32 dim
-4| "  ◌ s-broken · corrupt"
+9| "  ◌ s-broken · corrupt"
   style 0-21 dim
-5| "esc close"
+10| "esc close"
   style 0-8 dim
-6| "────────────────────────────────────────────────────────────────────────────"
+11| "────────────────────────────────────────────────────────────────────────────"
   style 0-75 fg-3
-7| "❯"
+12| "❯"
   style 0-0 dim
   style 2-2 inverse
-8| "enter send · shift+enter newline · ctrl+c exit"
+13| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-9-15| <blank>
+14-15| <blank>

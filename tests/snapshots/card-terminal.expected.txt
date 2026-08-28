@@ -1,44 +1,55 @@
-terminal 72x22 buffer=normal length=22 base=0 viewport=0
+terminal 72x22 buffer=normal length=27 base=5 viewport=5
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @18,2
-0| "You"
+cursor hidden @19,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Run the checks."
-2| <blank>
-3| "◆ bash · pnpm test · Run the test suite"
-  style 0-38 fg-2
-4| "/workspace/talon-ui"
-  style 0-18 dim
-5| "$ pnpm test"
-  style 0-10 dim
-6| "12 passed"
-  style 0-8 dim
-7| "0 failed"
-  style 0-7 dim
+7| "Run the checks."
 8| <blank>
-9| "◆ bash · pnpm typecheck · Check the types"
-  style 0-40 fg-1
-10| "/workspace/talon-ui/src"
-  style 0-22 dim
-11| "$ pnpm typecheck"
-  style 0-15 dim
-12| "src/a.ts(4,7): error TS2304: cannot find name"
-  style 0-44 dim
-13| "[exit 2]"
+9| "◆ bash · pnpm test · Run the test suite"
+  style 0-38 fg-2
+10| "/workspace/talon-ui"
+  style 0-18 dim
+11| "$ pnpm test"
+  style 0-10 dim
+12| "12 passed"
+  style 0-8 dim
+13| "0 failed"
   style 0-7 dim
 14| <blank>
-15| "◇ bash · pnpm build · Build the bundle"
+15| "◆ bash · pnpm typecheck · Check the types"
+  style 0-40 fg-1
+16| "/workspace/talon-ui/src"
+  style 0-22 dim
+17| "$ pnpm typecheck"
+  style 0-15 dim
+18| "src/a.ts(4,7): error TS2304: cannot find name"
+  style 0-44 dim
+19| "[exit 2]"
+  style 0-7 dim
+20| <blank>
+21| "◇ bash · pnpm build · Build the bundle"
   style 0-37 fg-3
-16| "└ running…"
+22| "└ running…"
   style 0-9 dim
-17| "────────────────────────────────────────────────────────────────────────"
+23| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-18| "⚙"
+24| "⚙"
   style 0-0 dim
   style 2-2 inverse
-19| "enter send · shift+enter newline · ctrl+c exit"
+25| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-20| "/workspace/talon-ui"
-  style 0-18 dim
-21| <blank>
+26| "talon-ui"

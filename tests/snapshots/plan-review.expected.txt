@@ -1,28 +1,40 @@
 terminal 72x24 buffer=normal length=24 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @15,0
-0| <blank>
-1| "─ plan review ──────────────────────────────────────────────────────────"
+cursor hidden @20,0
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "─ plan review ──────────────────────────────────────────────────────────"
   style 0-71 dim
-2| "Question 1/1 (1 unanswered) · Plan review"
+7| "Question 1/1 (1 unanswered) · Plan review"
   style 0-40 dim
-3| "Approve this plan and leave plan mode?"
-4| <blank>
-5| "# The plan"
-6| "1. do things"
-7| <blank>
-8| " › 1. ▸ Approve"
+8| "Approve this plan and leave plan mode?"
+9| <blank>
+10| "# The plan"
+11| "1. do things"
+12| <blank>
+13| " › 1. ▸ Approve"
   style 0-14 fg-13 bold
-9| "   2. Keep planning"
-10| <blank>
-11| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
+14| "   2. Keep planning"
+15| <blank>
+16| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
   style 0-62 dim
-12| "────────────────────────────────────────────────────────────────────────"
+17| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-13| "❯"
+18| "❯"
   style 0-0 dim
   style 2-2 inverse
-14| "enter send · shift+enter newline · ctrl+c exit"
+19| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-15-23| <blank>
+20-23| <blank>

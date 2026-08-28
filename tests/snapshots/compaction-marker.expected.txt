@@ -1,28 +1,39 @@
-terminal 72x18 buffer=normal length=18 base=0 viewport=0
+terminal 72x18 buffer=normal length=20 base=2 viewport=2
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @11,2
-0| "You"
-  style 0-2 bold underline
-1| "What did we decide?"
-2| <blank>
-3| "talon"
-  style 0-4 fg-13 bold underline
-4| "To rename the flag."
+cursor hidden @15,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
 5| <blank>
-6| "… earlier context was compacted …"
-  style 0-32 dim
-7| <blank>
-8| "You"
+6| "You"
   style 0-2 bold underline
-9| "Ship it."
-10| "────────────────────────────────────────────────────────────────────────"
+7| "What did we decide?"
+8| <blank>
+9| "talon"
+  style 0-4 fg-13 bold underline
+10| "To rename the flag."
+11| <blank>
+12| "… earlier context was compacted …"
+  style 0-32 dim
+13| <blank>
+14| "You"
+  style 0-2 bold underline
+15| "Ship it."
+16| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-11| "◌"
+17| "◌"
   style 0-0 dim
   style 2-2 inverse
-12| "enter send · shift+enter newline · ctrl+c exit"
+18| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-13| "/workspace/talon-ui"
-  style 0-18 dim
-14-17| <blank>
+19| "talon-ui"

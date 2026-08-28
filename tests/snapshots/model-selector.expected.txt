@@ -1,25 +1,37 @@
 terminal 76x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @4,51
-0| <blank>
-1| "─ model ────────────────────────────────────────────────────────────────────"
+cursor hidden @9,51
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "─ model ────────────────────────────────────────────────────────────────────"
   style 0-75 dim
-2| "⌕ type to filter"
+7| "⌕ type to filter"
   style 0-15 dim
-3| "    Chat          DeepSeek · 64k ctx · fast general model"
+8| "    Chat          DeepSeek · 64k ctx · fast general model"
   style 8-56 dim
-4| "→ ● Reasoner      DeepSeek · 128k ctx · effort high"
+9| "→ ● Reasoner      DeepSeek · 128k ctx · effort high"
   style 0-50 inverse
-5| "    my-own-build  local"
+10| "    my-own-build  local"
   style 16-22 dim
-6| "↑/↓ · shift+tab effort · enter select · esc clear/cancel"
+11| "↑/↓ · shift+tab effort · enter select · esc clear/cancel"
   style 0-55 dim
-7| "────────────────────────────────────────────────────────────────────────────"
+12| "────────────────────────────────────────────────────────────────────────────"
   style 0-75 fg-3
-8| "❯"
+13| "❯"
   style 0-0 dim
   style 2-2 inverse
-9| "enter send · shift+enter newline · ctrl+c exit"
+14| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-10-17| <blank>
+15-17| <blank>

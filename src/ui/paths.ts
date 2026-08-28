@@ -32,3 +32,20 @@ export function abbreviateHome(path: string, home: string = homedir(), platform:
   if (!foldedPath.startsWith(`${foldedHome}/`)) return path
   return TILDE + path.slice(home.replace(/[\\/]+$/u, '').length)
 }
+
+/** The LAST segment of a path — what the FOOTER shows.
+ *
+ * Bottom-bar width is the scarcest space in the whole UI, and a working
+ * directory spends it fastest: `~/Dev/proj/for-private/agents/deepseek-harness`
+ * is 44 columns of mostly-constant prefix sitting beside the handful of
+ * segments that actually change. The full path belongs in the boot banner,
+ * which has room for it and is read once; the footer keeps the one segment
+ * that tells you WHICH project you are in.
+ *
+ * `~` and a bare root answer themselves rather than emptying — a footer that
+ * says nothing about where you are is worse than one that says `~`. */
+export function projectName(path: string, home?: string, platform?: string): string {
+  const abbreviated = abbreviateHome(path, home, platform)
+  const segments = abbreviated.split(/[\\/]+/u).filter((segment) => segment !== '')
+  return segments[segments.length - 1] ?? abbreviated
+}

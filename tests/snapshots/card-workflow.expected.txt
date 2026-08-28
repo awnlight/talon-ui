@@ -1,36 +1,47 @@
-terminal 72x18 buffer=normal length=18 base=0 viewport=0
+terminal 72x18 buffer=normal length=21 base=3 viewport=3
 lifecycle started=1 stopped=0 progress=inactive
 title "talon"
-cursor hidden @12,2
-0| "You"
+cursor hidden @15,2
+0| "  ▄████▄   ▗█"
+  style 0-12 fg-6
+1| " ██ █████▄▗██    talon"
+  style 0-12 fg-6
+  style 17-21 fg-6 bold
+2| " ████████████▘   /workspace/talon-ui"
+  style 0-13 fg-6
+  style 17-35 dim
+3| " ▝█████████▘"
+  style 0-11 fg-6
+4| "  █ █ █"
+  style 0-6 fg-6
+5| <blank>
+6| "You"
   style 0-2 bold underline
-1| "Review the branch."
-2| <blank>
-3| "◆ workflow · review-changes"
+7| "Review the branch."
+8| <blank>
+9| "◆ workflow · review-changes"
   style 0-26 fg-2
-4| "  ◆ review:bugs · Review · completed"
+10| "  ◆ review:bugs · Review · completed"
   style 2-14 fg-2
   style 15-35 dim
-5| "  ◆ review:perf · Review · failed"
+11| "  ◆ review:perf · Review · failed"
   style 2-14 fg-1
   style 15-32 dim
-6| "└ 2 members · completed"
+12| "└ 2 members · completed"
   style 0-22 dim
-7| <blank>
-8| "◇ workflow · verify-findings"
+13| <blank>
+14| "◇ workflow · verify-findings"
   style 0-27 fg-3
-9| "  ◇ verify:a · Verify"
+15| "  ◇ verify:a · Verify"
   style 2-11 fg-3
   style 12-20 dim
-10| "└ 1 member"
+16| "└ 1 member"
   style 0-9 dim
-11| "────────────────────────────────────────────────────────────────────────"
+17| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-12| "❯"
+18| "❯"
   style 0-0 dim
   style 2-2 inverse
-13| "enter send · shift+enter newline · ctrl+c exit"
+19| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-14| "/workspace/talon-ui"
-  style 0-18 dim
-15-17| <blank>
+20| "talon-ui"

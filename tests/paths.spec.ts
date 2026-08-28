@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { homedir } from 'node:os'
-import { abbreviateHome } from '../src/ui/paths.ts'
+import { abbreviateHome, projectName } from '../src/ui/paths.ts'
 
 describe('abbreviateHome — POSIX', () => {
   const home = '/home/devbox'
@@ -54,5 +54,28 @@ describe('abbreviateHome — the live defaults', () => {
   it('reads the real home and platform when none is given', () => {
     expect(abbreviateHome(homedir())).toBe('~')
     expect(abbreviateHome('/definitely/not/home')).toBe('/definitely/not/home')
+  })
+})
+
+describe('projectName — the footer keeps the segment, the banner keeps the path', () => {
+  const home = '/home/devbox'
+  const at = (path: string): string => projectName(path, home, 'linux')
+
+  it('answers the last segment, which is the part that says WHICH project', () => {
+    expect(at('/home/devbox/Dev/proj/for-private/agents/deepseek-harness')).toBe('deepseek-harness')
+    expect(at('/home/devbox/proj/app')).toBe('app')
+    expect(at('/etc/hosts')).toBe('hosts')
+  })
+  it('answers home and a bare root as themselves — never nothing', () => {
+    expect(at(home)).toBe('~')
+    expect(at('/home/devbox/')).toBe('~')
+    expect(at('/')).toBe('/')
+  })
+  it('handles Windows separators and drives', () => {
+    expect(projectName('C:\\Users\\Devbox\\proj\\app', 'C:\\Users\\Devbox', 'win32')).toBe('app')
+    expect(projectName('D:\\work', 'C:\\Users\\Devbox', 'win32')).toBe('work')
+  })
+  it('reads the real homedir when none is passed', () => {
+    expect(projectName(homedir())).toBe('~')
   })
 })

@@ -269,19 +269,22 @@ describe('reasoning visibility (Ctrl+R, Task 4)', () => {
     const cell = new StreamingAssistantCell(colored)
     cell.settle([{ type: 'reasoning', text: 'why a\nwhy b' }, { type: 'text', text: 'answer' }])
     const shown = cell.render(80)
-    expect(cell.lineCount()).toBe(4)                    // header + 2 reasoning + 1 text source lines
+    expect(cell.lineCount()).toBe(5)                    // header + 2 reasoning + separator + 1 text
+    expect(shown[3]).toBe('')                           // the separator, between the two kinds
 
     cell.setShowReasoning(false)
     const hidden = cell.render(80)
     expect(hidden.join('\n')).not.toContain('why a')
     expect(hidden.join('\n')).toContain('answer')
-    expect(hidden.length).toBe(shown.length - 2)
+    // The separator rides WITH the reasoning: nothing left to separate.
+    expect(hidden.length).toBe(shown.length - 3)
+    expect(hidden).not.toContain('')
     expect(cell.lineCount()).toBe(2)                    // header + the one text line
     expect(cell.render(80)).toBe(hidden)                // the width cache is live again WITHIN this state
 
     cell.setShowReasoning(true)
     expect(cell.render(80)).toEqual(shown)              // identical rows (a fresh array: the mutation dropped the cache)
-    expect(cell.lineCount()).toBe(4)
+    expect(cell.lineCount()).toBe(5)
   })
 
   it('live: hiding drops only the reasoning rows, leaving the markdown text untouched', () => {
@@ -289,10 +292,10 @@ describe('reasoning visibility (Ctrl+R, Task 4)', () => {
     cell.update({ index: 0, block: 'reasoning', text: 'thinking' })
     cell.update({ index: 1, block: 'text', text: '# Title' })
     const shown = cell.render(80)
-    expect(cell.lineCount()).toBe(3)
+    expect(cell.lineCount()).toBe(4)                    // header + reasoning + separator + title
 
     cell.setShowReasoning(false)
-    expect(cell.render(80)).toEqual(shown.filter((r) => !r.includes('thinking')))
+    expect(cell.render(80)).toEqual(shown.filter((r) => !r.includes('thinking') && r !== ''))
     expect(cell.lineCount()).toBe(2)
 
     cell.setShowReasoning(true)
@@ -313,5 +316,53 @@ describe('reasoning visibility (Ctrl+R, Task 4)', () => {
     cell.update({ index: 0, block: 'reasoning', text: 'thinking' })
     expect(cell.render(80).join('\n')).not.toContain('thinking')
     expect(cell.lineCount()).toBe(1)
+  })
+})
+
+describe('the reasoning/reply separator (spec §4.1 spacing)', () => {
+  it('separates a turn that thinks and then answers', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.settle([{ type: 'reasoning', text: 'weighing it' }, { type: 'text', text: 'the answer' }])
+    const rows = cell.render(80)
+    expect(rows[1]).toContain('weighing it')
+    expect(rows[2]).toBe('')
+    expect(rows[3]).toContain('the answer')
+    expect(cell.lineCount()).toBe(rows.length)
+  })
+
+  it('separates nothing when there is nothing to separate', () => {
+    const textOnly = new StreamingAssistantCell(p)
+    textOnly.settle([{ type: 'text', text: 'just an answer' }])
+    expect(textOnly.render(80)).not.toContain('')
+    expect(textOnly.lineCount()).toBe(2)
+
+    const reasoningOnly = new StreamingAssistantCell(p)
+    reasoningOnly.settle([{ type: 'reasoning', text: 'only thought' }])
+    expect(reasoningOnly.render(80)).not.toContain('')
+    expect(reasoningOnly.lineCount()).toBe(2)
+  })
+
+  it('is about ORDER, not presence: reasoning AFTER the reply separates nothing', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.settle([{ type: 'text', text: 'the answer' }, { type: 'reasoning', text: 'an afterthought' }])
+    const rows = cell.render(80)
+    expect(rows).not.toContain('')
+    expect(cell.lineCount()).toBe(rows.length)
+  })
+
+  it('holds the same law on the LIVE path, incrementally', () => {
+    const cell = new StreamingAssistantCell(p)
+    cell.update({ index: 0, block: 'reasoning', text: 'thinking' })
+    cell.update({ index: 1, block: 'text', text: 'answering' })
+    cell.update({ index: 1, block: 'text', text: ' more' })
+    const rows = cell.render(80)
+    expect(rows[2]).toBe('')
+    expect(cell.lineCount()).toBe(rows.length)
+
+    // Text first, live: no separator, and later reasoning does not add one.
+    const reversed = new StreamingAssistantCell(p)
+    reversed.update({ index: 0, block: 'text', text: 'answering' })
+    reversed.update({ index: 1, block: 'reasoning', text: 'thinking' })
+    expect(reversed.render(80)).not.toContain('')
   })
 })
