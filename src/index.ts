@@ -115,6 +115,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         agents: { resume: (opts: { resumeSessionId: string }) => resumeRootAgent(anyCtx, opts.resumeSessionId) },
         createRootAgent: () => createRootAgent(anyCtx),
         services: {
+          // Optional by composition, every one of them: talon degrades rather
+          // than failing when a row is absent (T4 ruling 2/7/8/10).
+          fileReferences: anyCtx.get('fileReferences'),
+          attachments: anyCtx.get('attachments'),
+          subagents: anyCtx.get('subagents'),
+          settings: anyCtx.get('settings'),
           sessionQuery: anyCtx.get('sessionQuery'),
           sessions: anyCtx.sessions,
           projections: anyCtx.get('sessionProjections'),

@@ -634,6 +634,34 @@ describe('controller', () => {
     await refusing.controller.dispose()
   })
 
+  it('reads the notification preference from settings, and follows a committed change (spec §3.10)', async () => {
+    let observer: ((next: { notifications: boolean }) => void) | undefined
+    const settings = {
+      register: () => ({
+        get: () => ({ notifications: false }),
+        watch: (callback: (next: { notifications: boolean }) => void) => { observer = callback; return () => { observer = undefined } },
+        update: async () => {},
+      }),
+    }
+    const { ctx, agent, terminal, controller } = setup({ services: { settings } })
+    await terminal.waitForFrame(0)
+    const written: string[] = []
+    const realWrite = terminal.write.bind(terminal)
+    terminal.write = (data: string) => { written.push(data); realWrite(data) }
+    const notifications = (): number => written.filter((data) => data.includes('\x1b]9;')).length
+    const endTurn = (turn: number): void => ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
+
+    endTurn(1)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(notifications()).toBe(0)                      // the stored preference is off
+
+    observer!({ notifications: true })                   // …and a committed change applies live
+    endTurn(2)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(notifications()).toBe(1)
+    await controller.dispose()
+  })
+
   it('notifies on turn end only while unfocused, and consumes the focus reports (spec §8 T4)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)

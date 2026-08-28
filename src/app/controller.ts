@@ -12,6 +12,7 @@ import type { Notice } from '../backend/app-events.js'
 import { attachApprovalResponder } from '../backend/approval.js'
 import { registerSessionCommands, registerTalonCommands } from '../backend/commands.js'
 import { Metrics } from '../backend/metrics.js'
+import { bindSettings, type SettingsServiceFacet } from '../backend/settings.js'
 import { readModelChoices, type LlmCatalog, type ModelTarget } from '../backend/models.js'
 import { attachQuestionProvider, cancelledError } from '../backend/questions.js'
 import { buildResumeCandidates, preflightResume, type PreflightServices, type ResumeCandidate, type SessionRecordLike, type SessionServices } from '../backend/sessions.js'
@@ -107,6 +108,8 @@ export interface ControllerDeps {
     attachments?: { saveImages(inputs: readonly { mediaType: string; data: Uint8Array }[]): Promise<readonly { id: string }[]> }
     /** `ctx.subagents`. Absent: `/agents` says so. */
     subagents?: { listDescendants(rootSessionId: string, signal?: AbortSignal): Promise<readonly AgentEntry[]> }
+    /** `ctx.settings`. Absent: talon runs on its defaults, permanently. */
+    settings?: SettingsServiceFacet
   }
   /** Installed once per bind so a pick takes effect on the NEXT step
    * (`installModelSelection`'s own contract). Absent in tests that do not
@@ -158,6 +161,15 @@ const PASTE_NOTICE: Record<'unavailable' | 'empty' | 'failed', (reason: string) 
 }
 const MODEL_FAILED = 'Could not read the model catalog:'
 const AGENTS_UNAVAILABLE = 'Subagents are not available in this composition.'
+/** The schema `ctx.settings` renders and validates this namespace with. Kept
+ * as plain JSON Schema so talon needs no schemastery import (spec §3.10). */
+const TALON_SETTINGS_SCHEMA = {
+  type: 'object',
+  properties: {
+    scheme: { type: 'string', enum: ['dark', 'light'], default: 'dark', description: 'Which half of the ANSI-16 palette to resolve.' },
+    notifications: { type: 'boolean', default: true, description: 'Notify an unfocused terminal when a turn ends.' },
+  },
+} as const
 const AGENTS_FAILED = 'Could not list the subagents:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -234,6 +246,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // is talon's own tracking: pi-tui has none.
   const notifier = new Notifier(terminal)
   notifier.start()
+  // Persisted PREFERENCE (spec §3.10) — never session UI state. A committed
+  // change, including one made by editing the document by hand, applies here.
+  const settings = bindSettings(deps.services.settings, TALON_SETTINGS_SCHEMA, (next) => {
+    notifier.setEnabled(next.notifications)
+    tui.requestRender()
+  })
+  notifier.setEnabled(settings.current().notifications)
   let sessionName = DEFAULT_TITLE
   const hasPanel = (): boolean => panels.active !== undefined
   // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
@@ -766,6 +785,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     for (const detach of detachers.splice(0)) detach()
     for (const run of commandRuns) if (run !== executingRun) run.abort()
     composer.dispose()          // the glyph timer never outlives the UI
+    settings.dispose()
     notifier.stop()             // stop asking a terminal we are done with for focus
     title.reset()               // a reused terminal must not keep advertising a session that ended
     panels.disposeAll()
