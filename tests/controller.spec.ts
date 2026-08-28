@@ -520,6 +520,36 @@ describe('controller', () => {
     await controller.dispose()
   })
 
+  it('notifies on turn end only while unfocused, and consumes the focus reports (spec §8 T4)', async () => {
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    // A completed turn renders nothing, so these phases settle on a tick
+    // rather than a frame — there is no frame to wait for.
+    const written: string[] = []
+    const realWrite = terminal.write.bind(terminal)
+    terminal.write = (data: string) => { written.push(data); realWrite(data) }
+    const notifications = (): number => written.filter((data) => data.includes('\x1b]9;')).length
+    const settle = async (): Promise<void> => { await new Promise((r) => setTimeout(r, 20)) }
+    const endTurn = (turn: number): void => ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
+
+    endTurn(1)
+    await settle()
+    expect(notifications()).toBe(1)                        // unfocused by default: the safe failure
+
+    terminal.input('\x1b[I')                               // focused
+    endTurn(2)
+    await settle()
+    expect(notifications()).toBe(1)
+    // A focus report is terminal state, not input: consumed, never typed.
+    expect(terminal.snapshot()).not.toContain('[I')
+
+    terminal.input('\x1b[O')                               // unfocused again
+    endTurn(3)
+    await settle()
+    expect(notifications()).toBe(2)
+    await controller.dispose()
+  })
+
   it('sets the window title from session/title, sanitized, and restores it on dispose (spec §8 T4)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)

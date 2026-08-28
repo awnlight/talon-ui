@@ -24,7 +24,8 @@ import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
-import { TerminalTitle } from '../ui/terminal-title.js'
+import { Notifier } from '../ui/notify.js'
+import { DEFAULT_TITLE, TerminalTitle } from '../ui/terminal-title.js'
 import { commandArg, type CardVisibility } from '../ui/transcript/tool-cards.js'
 import { Transcript } from '../ui/transcript/transcript.js'
 
@@ -139,6 +140,8 @@ function gitBranch(cwd: string): string | undefined {
 }
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
 const MODEL_UNAVAILABLE = 'Model switching is not available in this composition.'
+/** What an unfocused terminal is told when a turn finishes (spec §8 T4). */
+const TURN_DONE = 'talon: turn finished'
 const MODEL_FAILED = 'Could not read the model catalog:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -211,6 +214,11 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // seam rather than rendered, and put back on teardown.
   const title = new TerminalTitle(terminal)
   title.reset()
+  // Turn-end notification while the terminal is unfocused (spec §8 T4). Focus
+  // is talon's own tracking: pi-tui has none.
+  const notifier = new Notifier(terminal)
+  notifier.start()
+  let sessionName = DEFAULT_TITLE
   const hasPanel = (): boolean => panels.active !== undefined
   // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
   // end, and never reconstructed from replayed history.
@@ -264,7 +272,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       }
       // The glyph reads the SAME live stream the transcript does (spec §4.3):
       // waiting on the model, thinking, answering, or running a tool.
-      if (appEvent.kind === 'session-title') title.set(appEvent.title)
+      if (appEvent.kind === 'session-title') { title.set(appEvent.title); sessionName = appEvent.title }
+      // Turn end, and only turn end: a notification per chunk would be noise.
+      if (appEvent.kind === 'turn-end') notifier.notify(`${TURN_DONE} · ${sessionName}`)
       if (appEvent.kind === 'step-start') setPhase('wait')
       if (appEvent.kind === 'turn-end') setPhase('idle')     // the prompt is back
       if (appEvent.kind === 'stream-delta') setPhase(appEvent.block === 'reasoning' ? 'thinking' : 'responding')
@@ -327,6 +337,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     metrics = new Metrics()
     sessionChoices = undefined      // a rebind can add or remove sessions
     title.reset()                   // the new session names itself on its own session/title
+    sessionName = DEFAULT_TITLE
     workspace = process.cwd()
     branch = gitBranch(workspace)
     queued = 0
@@ -625,6 +636,10 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   detachers.push(ctx.on('commands/change', () => composer.refreshCompletion()))
 
   detachers.push(tui.addInputListener((data) => {
+    // Focus reports come first and unconditionally: they are terminal state,
+    // not user input, so a panel must not swallow them and the editor must
+    // never see them as text.
+    if (notifier.observe(data)) return { consume: true }
     if (hasPanel()) return undefined // panels own 100% of input (spec D5)
     if (matchesKey(data, 'ctrl+c')) {
       if (running) { bound.cancel({ kind: 'user' }); return { consume: true } }
@@ -676,6 +691,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     for (const detach of detachers.splice(0)) detach()
     for (const run of commandRuns) if (run !== executingRun) run.abort()
     composer.dispose()          // the glyph timer never outlives the UI
+    notifier.stop()             // stop asking a terminal we are done with for focus
     title.reset()               // a reused terminal must not keep advertising a session that ended
     panels.disposeAll()
     tui.stop()
