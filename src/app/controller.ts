@@ -18,7 +18,8 @@ import { buildResumeCandidates, preflightResume, type PreflightServices, type Re
 import { translateSessionEvent } from '../backend/translate.js'
 import { displayText, type Palette, paletteTable } from '../theme/palette.js'
 import { Composer, type GlyphPhase } from '../ui/composer/composer.js'
-import { createCompletionProvider, type FileReferenceLookup } from '../ui/composer/completion.js'
+import { createCompletionProvider } from '../ui/composer/completion.js'
+import { pasteImage, readClipboardImage, type ClipboardImageReader } from '../ui/composer/paste.js'
 import { ApprovalPanel } from '../ui/panels/approval-panel.js'
 import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
@@ -101,12 +102,16 @@ export interface ControllerDeps {
     /** `@file` discovery (`ctx.fileReferences`). Absent in a composition
      * without the row: `@` completion is then inert and nothing else changes. */
     fileReferences?: { list(agent: unknown, query: string, signal: AbortSignal): Promise<readonly { path: string; kind: 'file' | 'directory' }[]> }
+    /** `ctx.attachments`. Absent: Ctrl+V says so and changes nothing. */
+    attachments?: { saveImages(inputs: readonly { mediaType: string; data: Uint8Array }[]): Promise<readonly { id: string }[]> }
   }
   /** Installed once per bind so a pick takes effect on the NEXT step
    * (`installModelSelection`'s own contract). Absent in tests that do not
    * exercise `/model`. */
   modelSelection?: { current: ModelTarget | undefined }
   exit(code: number): void
+  /** Overridden in tests; the default runs the platform clipboard command. */
+  readClipboardImage?: ClipboardImageReader
 }
 
 const HINT_IDLE = 'enter send · shift+enter newline · ctrl+c exit'
@@ -142,6 +147,12 @@ const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.
 const MODEL_UNAVAILABLE = 'Model switching is not available in this composition.'
 /** What an unfocused terminal is told when a turn finishes (spec §8 T4). */
 const TURN_DONE = 'talon: turn finished'
+/** One dim line per image paste that did not produce an attachment. */
+const PASTE_NOTICE: Record<'unavailable' | 'empty' | 'failed', (reason: string) => string> = {
+  unavailable: () => 'Image paste is not available: no attachment store is composed.',
+  empty: () => 'The clipboard holds no image.',
+  failed: (reason) => `Could not attach the pasted image: ${reason}`,
+}
 const MODEL_FAILED = 'Could not read the model catalog:'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -671,6 +682,20 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
       // never logged (§3.10).
       transcript.setCardVisibility(NEXT_CARD_VISIBILITY[transcript.cardsShown()])
       tui.requestRender()
+      return { consume: true }
+    }
+    if (matchesKey(data, 'ctrl+v')) {
+      // The clipboard lives outside the terminal, so this is asynchronous and
+      // every failure is ordinary: each one leaves the composer untouched.
+      void (async () => {
+        const outcome = await pasteImage({
+          read: deps.readClipboardImage ?? readClipboardImage,
+          ...deps.services.attachments === undefined ? {} : { save: (images) => deps.services.attachments!.saveImages(images) },
+        })
+        if (outcome.kind === 'stored') composer.editor.insertTextAtCursor(`${outcome.mention} `)
+        else appendLocalNotice({ text: PASTE_NOTICE[outcome.kind](outcome.kind === 'failed' ? outcome.reason : ''), tone: outcome.kind === 'failed' ? 'error' : 'info' })
+        tui.requestRender()
+      })()
       return { consume: true }
     }
     if (matchesKey(data, 'ctrl+d') && composer.editor.getText() === '') {

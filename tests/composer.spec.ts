@@ -227,3 +227,19 @@ describe('Composer', () => {
     expect(state.queries).toBe(0)
   })
 })
+
+describe('bracketed paste (spec §8 T4 — pi-tui already expands markers at submit)', () => {
+  it('submits the FULL pasted content, not the fold marker the editor shows while editing', async () => {
+    const { term, tui, composer } = setup()
+    const got: string[] = []
+    composer.onSubmit = (text) => got.push(text)
+    tui.start()
+    await term.waitForFrame(0)
+    // A real bracketed paste: ESC[200~ … ESC[201~ around multi-line content.
+    const pasted = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+    term.input(`\x1b[200~${pasted}\x1b[201~`)
+    term.input('\r')
+    tui.stop()
+    expect(got).toEqual([pasted])
+  })
+})

@@ -111,6 +111,7 @@ function setup(overrides: {
   services?: Partial<ControllerDeps['services']>
   palette?: ControllerDeps['palette']
   modelSelection?: ControllerDeps['modelSelection']
+  readClipboardImage?: ControllerDeps['readClipboardImage']
 } = {}) {
   const ctx = fakeCtx()
   const agent = fakeAgent()
@@ -127,6 +128,7 @@ function setup(overrides: {
     createRootAgent: overrides.createRootAgent ?? session.createRootAgent,
     services: { ...session.services, ...overrides.services },
     ...overrides.modelSelection === undefined ? {} : { modelSelection: overrides.modelSelection },
+    ...overrides.readClipboardImage === undefined ? {} : { readClipboardImage: overrides.readClipboardImage },
   })
   return { ctx, agent, terminal, exit, controller, commands }
 }
@@ -518,6 +520,52 @@ describe('controller', () => {
     expect(terminal.snapshot()).toContain('◌')
     expect(terminal.snapshot()).toMatch(/rgb-fg/)                // greys, only under truecolor
     await controller.dispose()
+  })
+
+  it('Ctrl+V attaches a clipboard image as a mention, and every failure leaves the composer alone', async () => {
+    const png = { mediaType: 'image/png' as const, data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }
+    const stored = setup({
+      readClipboardImage: async () => png,
+      services: { attachments: { saveImages: async () => [{ id: 'att-7' }] } },
+    })
+    await stored.terminal.waitForFrame(0)
+    let before = stored.terminal.frames
+    stored.terminal.input('\x16')
+    await stored.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(stored.terminal.snapshot()).toContain('@image:att-7'))
+    await stored.controller.dispose()
+
+    // No store composed: one dim line, and nothing typed. This one deliberately
+    // does NOT inject a reader — the real platform reader is wired but never
+    // called, because the missing store short-circuits before the clipboard.
+    const none = setup()
+    await none.terminal.waitForFrame(0)
+    before = none.terminal.frames
+    none.terminal.input('\x16')
+    await none.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(none.terminal.snapshot()).toContain('no attachment store'))
+    expect(none.terminal.snapshot()).not.toContain('@image:')
+    await none.controller.dispose()
+
+    // An image-free clipboard, and a store that refuses.
+    const empty = setup({ readClipboardImage: async () => undefined, services: { attachments: { saveImages: async () => [] } } })
+    await empty.terminal.waitForFrame(0)
+    before = empty.terminal.frames
+    empty.terminal.input('\x16')
+    await empty.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(empty.terminal.snapshot()).toContain('no image'))
+    await empty.controller.dispose()
+
+    const refusing = setup({
+      readClipboardImage: async () => png,
+      services: { attachments: { saveImages: async () => { throw new Error('image too large') } } },
+    })
+    await refusing.terminal.waitForFrame(0)
+    before = refusing.terminal.frames
+    refusing.terminal.input('\x16')
+    await refusing.terminal.waitForFrame(before)
+    await vi.waitFor(() => expect(refusing.terminal.snapshot()).toContain('image too large'))
+    await refusing.controller.dispose()
   })
 
   it('notifies on turn end only while unfocused, and consumes the focus reports (spec §8 T4)', async () => {
