@@ -3,52 +3,52 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @19,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Run the checks."
+6| "  You"
+  style 2-4 bold underline
+7| "  Run the checks."
 8| <blank>
-9| "◆ bash · pnpm test · Run the test suite"
-  style 0-38 fg-2
-10| "/workspace/talon-ui"
-  style 0-18 dim
-11| "$ pnpm test"
-  style 0-10 dim
-12| "12 passed"
-  style 0-8 dim
-13| "0 failed"
-  style 0-7 dim
+9| "  ◆ bash · pnpm test · Run the test suite"
+  style 2-40 fg-2
+10| "  /workspace/talon-ui"
+  style 2-20 dim
+11| "  $ pnpm test"
+  style 2-12 dim
+12| "  12 passed"
+  style 2-10 dim
+13| "  0 failed"
+  style 2-9 dim
 14| <blank>
-15| "◆ bash · pnpm typecheck · Check the types"
-  style 0-40 fg-1
-16| "/workspace/talon-ui/src"
-  style 0-22 dim
-17| "$ pnpm typecheck"
-  style 0-15 dim
-18| "src/a.ts(4,7): error TS2304: cannot find name"
-  style 0-44 dim
-19| "[exit 2]"
-  style 0-7 dim
+15| "  ◆ bash · pnpm typecheck · Check the types"
+  style 2-42 fg-1
+16| "  /workspace/talon-ui/src"
+  style 2-24 dim
+17| "  $ pnpm typecheck"
+  style 2-17 dim
+18| "  src/a.ts(4,7): error TS2304: cannot find name"
+  style 2-46 dim
+19| "  [exit 2]"
+  style 2-9 dim
 20| <blank>
-21| "◇ bash · pnpm build · Build the bundle"
-  style 0-37 fg-3
-22| "└ running…"
-  style 0-9 dim
+21| "  ◇ bash · pnpm build · Build the bundle"
+  style 2-39 fg-3
+22| "  └ running…"
+  style 2-11 dim
 23| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
 24| "⚙"
   style 0-0 dim
   style 2-2 inverse
-25| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-26| "talon-ui"
+25| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+26| "  talon-ui"

@@ -25,6 +25,7 @@ import { PanelManager } from '../ui/panels/panel-manager.js'
 import { QuestionPanel } from '../ui/panels/question-panel.js'
 import { AgentsPanel, type AgentEntry } from '../ui/panels/agents-panel.js'
 import { BannerCell } from '../ui/banner.js'
+import { Gutter } from '../ui/gutter.js'
 import { ModelPanel, type ModelPick } from '../ui/panels/model-panel.js'
 import { ResumePanel } from '../ui/panels/resume-panel.js'
 import { Notifier } from '../ui/notify.js'
@@ -211,7 +212,9 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   // (container children order IS the render order).
   const transcriptSlot = new Container()
   let transcript = new Transcript(palette)
-  transcriptSlot.addChild(transcript.container)
+  // Everything the transcript prints is CONTENT, so it sits in the gutter;
+  // only the composer's rule and the `❯` are allowed column 0 (see gutter.ts).
+  transcriptSlot.addChild(new Gutter(transcript.container))
   const composer = new Composer(tui, palette)
   composer.setHint(HINT_IDLE)
 
@@ -297,7 +300,11 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
   mountBanner()
 
   tui.addChild(transcriptSlot)
-  tui.addChild(panels.container)
+  // A panel is content too. Focus is unaffected: pi-tui routes input to the
+  // component reference setFocus was given (tui.js:169), not by walking the
+  // tree, and its cursor marker is positional INSIDE a row, so it shifts with
+  // the text.
+  tui.addChild(new Gutter(panels.container))
   tui.addChild(composer.container)
   tui.setFocus(composer.editor)
 
@@ -412,7 +419,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     setPhase(running ? 'wait' : 'idle')
     transcript = new Transcript(palette)
     transcriptSlot.clear()
-    transcriptSlot.addChild(transcript.container)
+    transcriptSlot.addChild(new Gutter(transcript.container))
     mountBanner()                   // a rebind is a new session; it gets the same entry
     // Replay from the LIVE session (Ruling 8): whatever agents.resume() loaded,
     // through the same translation live events take — so a resumed screen and

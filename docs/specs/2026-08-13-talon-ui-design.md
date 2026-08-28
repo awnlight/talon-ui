@@ -180,7 +180,7 @@ TUI 自有命令经 `agent.ctx.inject(['commands'], c => c.commands.register(...
 
 | | Codex | Claude Code | talon-ui |
 |---|---|---|---|
-| 消息标记 | `▌` 竖线贴边 | `●` + `⎿` 树线 | **加粗下划线角色头,正文零装饰**(拖选复制永不带杂质) |
+| 消息标记 | `▌` 竖线贴边 | `●` + `⎿` 树线 | **加粗下划线角色头,正文零装饰**(无竖线、无树线、无行前缀字符) |
 | 工具卡片 | 框线块 | 缩进树 | **`◇`运行中/`◆`完成 单行头 + 统一 dim 内文** |
 | 输入区 | 圆角框 | 圆角框 | **单条状态横线 + `❯` 提示符**(无边框 Editor 子类,省 2 行) |
 | 强调色 | 品红/紫 | 橙 | **talon 青**(truecolor 仅限两处品牌例外:wordmark 渐变与 `brand` 文本;ANSI `accent` role 依 D6 保持 95) |
@@ -204,6 +204,8 @@ Button now uses theme.primary; tests pass.
 ```
 
 - 角色头 `messageHeader` 原样:`bold(underline(color(label)))`,无背景、无行前缀。`You` 默认色 / `talon` accent / `Steering` 同 You。
+- **左边距(T5 修订)**:第 0 列只留给「划分屏幕」的两样东西——composer 状态横线(必须横贯全宽才能分隔)与 `❯`/相变 glyph(光标锚点);转录、面板、hint、footer 全部缩进 `GUTTER = 2`。宽度不是口味问题:`FramelessEditor` 早已把输入续行缩进 `PROMPT_WIDTH = 2`,取同值后全 UI(含正在输入的文字)在第 2 列对齐,只有分隔线与光标破出。
+  **代价(明示,非疏漏)**:原文「拖选复制永不带杂质」的绝对形式不再成立——正文仍无任何装饰字符,但拖选会带上 2 个前导空格。这是用复制纯度换取「贴边即分隔」这一信息层级;若日后判定复制纯度更重要,回退方式是移除 `Gutter` 包装,不触碰任何 cell。
 - UI 文案英文,集中常量(未来 i18n 单点)。
 - 压缩标记:dim `… earlier context was compacted …` 永久行,live 与 replay 路径字节一致;被遮蔽历史**保留在上方**(位置书签,非涂改)。live 压缩指示("Context being compacted Xs" + `⊙` glyph)**只由 live 事件驱动、永不从重放历史重建**(孤儿 start 是正常历史,不是进行中证据)。
 - 重试:撤回失败流式组件(部分文本从转录消失)+ 黄色通知 `Retrying model request (n/limit) in Xms: <msg>`(∞ 表示 always 模式);成功恢复**无**专门通知;耗尽=普通 error turn-end。turn/end 各 reason 映射照抄,`aborted` → `Turn cancelled.`。

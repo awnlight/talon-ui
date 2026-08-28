@@ -3,33 +3,33 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @11,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Rename the flag."
+6| "  You"
+  style 2-4 bold underline
+7| "  Rename the flag."
 8| <blank>
-9| "talon"
-  style 0-4 fg-13 bold underline
-10| "Renamed it."
+9| "  talon"
+  style 2-6 fg-13 bold underline
+10| "  Renamed it."
 11| "────────────────────────────────────────────────────────────────────────────────────────"
   style 0-87 dim
 12| "❯"
   style 0-0 dim
   style 2-2 inverse
-13| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-14| "talon-ui · deepseek-chat · cache 87% · 56% ctx                               ⏳ 2 queued"
-  style 8-10 dim
-  style 11-23 fg-6
-  style 24-45 dim
+13| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+14| "  talon-ui · deepseek-chat · cache 87% · 56% ctx                             ⏳ 2 queued"
+  style 10-12 dim
+  style 13-25 fg-6
+  style 26-47 dim
   style 77-86 fg-3

@@ -3,49 +3,49 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @15,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Stream the fix."
+6| "  You"
+  style 2-4 bold underline
+7| "  Stream the fix."
 8| <blank>
-9| "talon"
-  style 0-4 fg-13 bold underline
-10| "Sketching the patch."
-  style 0-19 dim italic
+9| "  talon"
+  style 2-6 fg-13 bold underline
+10| "  Sketching the patch."
+  style 2-21 dim italic
 11| <blank>
-12| "Fix"
-  style 0-2 bold underline
+12| "  Fix"
+  style 2-4 bold underline
 13| <blank>
-14| "- fast"
-  style 0-1 dim
-15| "- safe"
-  style 0-1 dim
+14| "  - fast"
+  style 2-3 dim
+15| "  - safe"
+  style 2-3 dim
 16| <blank>
-17| "```ts"
-  style 0-4 dim
-18| "  const n = 1 // count"
-  style 2-6 fg-6
-  style 12-12 fg-3
-  style 14-21 dim
-19| "  let m ="
-  style 2-4 fg-6
-20| "```"
-  style 0-2 dim
+17| "  ```ts"
+  style 2-6 dim
+18| "    const n = 1 // count"
+  style 4-8 fg-6
+  style 14-14 fg-3
+  style 16-23 dim
+19| "    let m ="
+  style 4-6 fg-6
+20| "  ```"
+  style 2-4 dim
 21| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
 22| "◉"
   style 0-0 dim
   style 2-2 inverse
-23| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-24| "talon-ui"
+23| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+24| "  talon-ui"

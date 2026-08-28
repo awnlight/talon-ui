@@ -3,34 +3,34 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @14,2
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5| <blank>
-6| "You"
-  style 0-2 bold underline
-7| "Which skills are loaded?"
+6| "  You"
+  style 2-4 bold underline
+7| "  Which skills are loaded?"
 8| <blank>
-9| "◇ context · skill-catalog · 3 lines"
-  style 0-11 dim
-  style 25-34 dim
+9| "  ◇ context · skill-catalog · 3 lines"
+  style 2-13 dim
+  style 27-36 dim
 10| <blank>
-11| "You"
-  style 0-2 bold underline
-12| "Use executing-plans."
+11| "  You"
+  style 2-4 bold underline
+12| "  Use executing-plans."
 13| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
 14| "❯"
   style 0-0 dim
   style 2-2 inverse
-15| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
-16| "talon-ui"
+15| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
+16| "  talon-ui"
 17| <blank>

@@ -3,37 +3,37 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @21,0
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5-6| <blank>
-7| "─ plan review ──────────────────────────────────────────────────────────"
-  style 0-71 dim
-8| "Question 1/1 (1 unanswered) · Plan review"
-  style 0-40 dim
-9| "Approve this plan and leave plan mode?"
+7| "  ─ plan review ────────────────────────────────────────────────────────"
+  style 2-71 dim
+8| "  Question 1/1 (1 unanswered) · Plan review"
+  style 2-42 dim
+9| "  Approve this plan and leave plan mode?"
 10| <blank>
-11| "# The plan"
-12| "1. do things"
+11| "  # The plan"
+12| "  1. do things"
 13| <blank>
-14| " › 1. ▸ Approve"
-  style 0-14 fg-13 bold
-15| "   2. Keep planning"
+14| "   › 1. ▸ Approve"
+  style 2-16 fg-13 bold
+15| "     2. Keep planning"
 16| <blank>
-17| "Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
-  style 0-62 dim
+17| "  Tab custom answer • ↑/↓ navigate • Enter submit • Esc interrupt"
+  style 2-64 dim
 18| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
 19| "❯"
   style 0-0 dim
   style 2-2 inverse
-20| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
+20| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
 21-23| <blank>

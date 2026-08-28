@@ -3,34 +3,34 @@ lifecycle started=1 stopped=0 progress=inactive
 title "talon"
 cursor hidden @15,0
 0| <blank>
-1| "  ▄████▄   ▗█"
-  style 0-12 fg-6
-2| " ██ █████▄▗██    talon"
-  style 0-12 fg-6
-  style 17-21 fg-6 bold
-3| " ████████████▘   /workspace/talon-ui"
-  style 0-13 fg-6
-  style 17-35 dim
-4| " ▝█████████▘"
-  style 0-11 fg-6
+1| "    ▄████▄   ▗█"
+  style 2-14 fg-6
+2| "   ██ █████▄▗██    talon"
+  style 2-14 fg-6
+  style 19-23 fg-6 bold
+3| "   ████████████▘   /workspace/talon-ui"
+  style 2-15 fg-6
+  style 19-37 dim
+4| "   ▝█████████▘"
+  style 2-13 fg-6
 5-6| <blank>
-7| "─ agents ───────────────────────────────────────────────────────────────────"
-  style 0-75 dim
-8| "◇ reviewer · continuable · s-review"
-  style 0-9 fg-3
-  style 10-34 dim
-9| "  ◆ grep pass · one-shot · s-grep"
-  style 2-12 fg-2
-  style 13-32 dim
-10| "  ◌ s-broken · corrupt"
-  style 0-21 dim
-11| "esc close"
-  style 0-8 dim
+7| "  ─ agents ─────────────────────────────────────────────────────────────────"
+  style 2-75 dim
+8| "  ◇ reviewer · continuable · s-review"
+  style 2-11 fg-3
+  style 12-36 dim
+9| "    ◆ grep pass · one-shot · s-grep"
+  style 4-14 fg-2
+  style 15-34 dim
+10| "    ◌ s-broken · corrupt"
+  style 2-23 dim
+11| "  esc close"
+  style 2-10 dim
 12| "────────────────────────────────────────────────────────────────────────────"
   style 0-75 fg-3
 13| "❯"
   style 0-0 dim
   style 2-2 inverse
-14| "enter send · shift+enter newline · ctrl+c exit"
-  style 0-45 dim
+14| "  enter send · shift+enter newline · ctrl+c exit"
+  style 2-47 dim
 15| <blank>

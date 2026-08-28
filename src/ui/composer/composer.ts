@@ -5,6 +5,7 @@
 import { Container, Editor, Text, type AutocompleteProvider, type TUI } from '@earendil-works/pi-tui'
 import type { Palette } from '../../theme/palette.js'
 import { Footer, type FooterView } from './footer.js'
+import { Gutter } from '../gutter.js'
 
 export type ComposerState = 'idle' | 'streaming' | 'waiting'
 
@@ -82,10 +83,12 @@ export class Composer {
     // Fourth child of the composer container, so it rides with the composer
     // through a D8 rebind exactly as the rule and the hint do.
     this.footerLine = new Footer(palette)
+    // The rule DIVIDES and the editor carries the caret, so both keep column
+    // 0; the hint and the footer are content and join the gutter (gutter.ts).
     this.container.addChild(this.ruleComponent())
     this.container.addChild(this.editor)
-    this.container.addChild(this.hint)
-    this.container.addChild(this.footerLine)
+    this.container.addChild(new Gutter(this.hint))
+    this.container.addChild(new Gutter(this.footerLine))
   }
 
   setFooter(view: FooterView): void { this.footerLine.set(view) }
