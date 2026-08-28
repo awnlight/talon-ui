@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -540,6 +540,25 @@ describe('talon snapshots', () => {
     send('command/done', { kind: 'success', text: paletteTable(createPalette(true)) })
     await terminal.waitForFrame(before)
     await checkpoint('palette-table', terminal)
+
+    await controller.dispose()
+  })
+
+  it('compaction-marker', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The permanent bookmark: the shadowed exchange stays ABOVE it, exactly as
+    // it does on replay — one durable checkpoint message, one dim line.
+    send('user/message', { content: [{ type: 'text', text: 'What did we decide?' }], source: { kind: 'user' } })
+    send('assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'To rename the flag.' }] } })
+    send('compaction/start', { compactionId: 'k1', turn: 1 })
+    send('user/message', { content: [{ type: 'text', text: 'Summary of the earlier conversation.' }], source: { kind: 'plugin', plugin: 'compact', compactionId: 'k1' } })
+    send('compaction/end', { compactionId: 'k1', turn: 1 })
+    send('user/message', { content: [{ type: 'text', text: 'Ship it.' }], source: { kind: 'user' } })
+    await terminal.waitForFrame(before)
+    await checkpoint('compaction-marker', terminal)
 
     await controller.dispose()
   })

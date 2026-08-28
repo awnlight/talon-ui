@@ -9,6 +9,12 @@ export type AppEvent =
   // (skill catalogs, agent instructions, subagent notices): same durable event
   // type, different `source.kind` — never rendered as 'You' (carryover 11).
   | { kind: 'context-card'; label: string; summary: string | undefined; text: string }
+  // The PERMANENT compaction bookmark (spec §4.1): identical on the live and
+  // replay paths, because it comes from the same durable checkpoint message.
+  | { kind: 'compaction-marker' }
+  // The LIVE indicator, consumed by the controller ALONE (ruling 7): never a
+  // transcript cell, so a replayed orphan `compaction/start` cannot light it.
+  | { kind: 'compaction-live'; phase: 'start' | 'end' }
   | { kind: 'turn-start'; turn: number }
   | { kind: 'turn-end'; turn: number; notice: Notice | undefined }
   | { kind: 'step-start'; turn: number; step: number }

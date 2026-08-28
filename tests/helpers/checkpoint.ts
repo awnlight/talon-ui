@@ -22,6 +22,7 @@ export const CHECKPOINTS = [
   'cards-expanded',
   'cards-hidden',
   'palette-table',
+  'compaction-marker',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

@@ -97,6 +97,8 @@ const HINT_INTERRUPT_FIRST = 'Agent is running — press Esc to interrupt, then 
 /** The one goodbye line (Ruling 12), written only on the user-exit path. */
 const GOODBYE = (sessionId: string): string => `To resume: dsh --profile talon, then /resume — session ${sessionId}`
 const RESUME_RUNNING = 'Resume is not available while a turn is running.'
+/** The live compaction indicator (spec §4.1). */
+const COMPACTING = (seconds: number): string => `Context being compacted ${seconds}s`
 const RESUME_UNMOUNTED = 'Resume is not available: session query is not mounted.'
 const CLEAR_RUNNING = 'A fresh session is not available while a turn is running.'
 /** What the selector shows for a session whose log recorded no workspace. */
@@ -166,6 +168,13 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     },
   })
   const hasPanel = (): boolean => panels.active !== undefined
+  // Live-only compaction state (spec §4.1): set from live dispatch, cleared on
+  // end, and never reconstructed from replayed history.
+  let compactingSince: number | undefined
+  const showCompaction = (): void => {
+    if (compactingSince === undefined) return
+    composer.flashHint(COMPACTING(Math.floor((Date.now() - compactingSince) / 1000)), 'warning')
+  }
   /** The composer's whole derived look: a panel outranks a running turn. */
   const syncComposer = (): void => {
     composer.setState(panels.active ? 'waiting' : running ? 'streaming' : 'idle')
@@ -188,8 +197,17 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     for (const appEvent of translateSessionEvent(event)) {
       if (appEvent.kind === 'tool-call-card') pendingCalls.set(appEvent.callId, commandArg(appEvent.args))
       if (appEvent.kind === 'turn-end') pendingCalls.clear()
+      // The live indicator is controller state, NOT a cell (ruling 7): this
+      // listener is the only place it can be set, and bindAgent's replay loop
+      // does not run through here — so an orphan `compaction/start` sitting in
+      // history (normal, not evidence of anything in flight) can never light it.
+      if (appEvent.kind === 'compaction-live') {
+        compactingSince = appEvent.phase === 'start' ? Date.now() : undefined
+        if (compactingSince === undefined) syncComposer()
+      }
       transcript.apply(appEvent)
     }
+    showCompaction()          // elapsed advances on the events that keep arriving
     tui.requestRender()
   }))
 
@@ -226,6 +244,7 @@ export function createController(deps: ControllerDeps): { dispose(): Promise<voi
     bound = next
     running = next.status === 'running'
     pendingCalls.clear()
+    compactingSince = undefined     // a rebind is never mid-compaction (ruling 7)
     transcript = new Transcript(palette)
     transcriptSlot.clear()
     transcriptSlot.addChild(transcript.container)

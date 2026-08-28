@@ -447,3 +447,28 @@ describe('Transcript Ctrl+O, the remaining shapes', () => {
     expect(accounted(t)).toBe(out.length)
   })
 })
+
+describe('Transcript compaction marker (spec §4.1)', () => {
+  it('renders one permanent dim bookmark, leaving the shadowed history above it', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'user-message', text: 'earlier question' })
+    t.apply({ kind: 'compaction-marker' })
+    t.apply({ kind: 'user-message', text: 'later question' })
+    const out = t.container.render(80)
+    expect(out).toContain('… earlier context was compacted …')
+    expect(out.join('\n')).toContain('earlier question')          // a bookmark, never an erasure
+    expect(out.indexOf('… earlier context was compacted …')).toBeGreaterThan(out.indexOf('earlier question'))
+  })
+  it('renders the marker identically whether the event arrives live or on replay', () => {
+    const live = new Transcript(p)
+    const replay = new Transcript(p)
+    for (const t of [live, replay]) t.apply({ kind: 'compaction-marker' })
+    expect(live.container.render(80)).toEqual(replay.container.render(80))
+  })
+  it('never renders anything for the live indicator', () => {
+    const t = new Transcript(p)
+    t.apply({ kind: 'compaction-live', phase: 'start' })
+    t.apply({ kind: 'compaction-live', phase: 'end' })
+    expect(t.container.render(80)).toEqual([])
+  })
+})

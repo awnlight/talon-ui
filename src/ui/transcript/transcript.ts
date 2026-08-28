@@ -10,6 +10,10 @@ import { StreamingAssistantCell } from './streaming.js'
 import { ORPHAN_CARD_NAME, ToolCardCell, type CardVisibility } from './tool-cards.js'
 
 const TRIM_MARKER = '… earlier history not shown …'
+/** The permanent compaction bookmark (spec §4.1). The shadowed history stays
+ * ABOVE it — a position marker, never an erasure — and it renders byte-identically
+ * on the live and replay paths because both reach it through the same event. */
+const COMPACTION_MARKER = '… earlier context was compacted …'
 
 // O(1) mount-cap accounting (I3 fix): the cap is measured in CONTENT lines
 // (logical lines before width-wrapping). Cells report their own count via
@@ -124,6 +128,11 @@ export class Transcript {
       case 'user-message':
         { const c = new UserMessageCell(event.text, this.palette); this.appendCell(c, c.contentLineCount()) }
         break
+      case 'compaction-marker':
+        { const c = new NoticeCell({ text: COMPACTION_MARKER, tone: 'info' }, this.palette); this.appendCell(c, c.contentLineCount()) }
+        break
+      case 'compaction-live':
+        break            // controller-owned live state (ruling 7): never a cell
       case 'context-card':
         {
           const c = new ContextCardCell(event.label, event.summary, event.text, this.palette)

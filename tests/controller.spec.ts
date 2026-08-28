@@ -305,6 +305,49 @@ describe('controller', () => {
     expect(terminal.snapshot()).toContain('weighing it')
     await controller.dispose()
   })
+  it('the live compaction indicator is driven by live dispatch only (spec §4.1, ruling 7)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { ctx, agent, terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'compaction/start', data: { compactionId: 'k1', turn: 1 } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('Context being compacted 0s')
+
+    // Elapsed advances off the events that keep arriving — no timer of its own.
+    before = terminal.frames
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_007_000)
+    ctx.emit('session/event', agent.session, { type: 'compaction/summary', data: { compactionId: 'k1' } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('Context being compacted 7s')
+
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'compaction/end', data: { compactionId: 'k1', turn: 1 } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('Context being compacted')
+    expect(terminal.snapshot()).toContain('enter send')          // the normal hint is back
+    await controller.dispose()
+  })
+
+  it('a replayed orphan compaction/start never lights the indicator (ruling 7)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller } = setup()
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // An unterminated compaction in HISTORY is normal, not evidence of one in
+    // flight: the replay path must not reach the controller's live state.
+    const resumed = fakeAgent('s2')
+    resumed.session.events = [
+      { type: 'compaction/start', data: { compactionId: 'k1', turn: 1 } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'after the compaction' }], source: { kind: 'plugin', plugin: 'compact', compactionId: 'k1' } } },
+    ]
+    controller.bindAgent(resumed as never)
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('Context being compacted')
+    expect(terminal.snapshot()).toContain('… earlier context was compacted …')   // the marker DOES replay
+    await controller.dispose()
+  })
+
   it('Ctrl+O cycles card visibility transcript-wide: collapsed → expanded → hidden (spec §4.2)', async () => {
     const { ctx, agent, terminal, controller } = setup()
     await terminal.waitForFrame(0)

@@ -29,6 +29,11 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       // prompt path.
       const kind = (d.source as { kind?: string } | undefined)?.kind ?? 'user'
       if (kind === 'user') return [{ kind: 'user-message', text: textOf(d.content) }]
+      // A compaction checkpoint FIRST (ruling 6): dsh replaces the shadowed
+      // history with one plugin-sourced user message carrying this exact
+      // marker (compaction/src/checkpoint.ts:19). It is the permanent
+      // bookmark, never a ContextCard.
+      if (kind === 'plugin' && (d.source as { plugin?: string }).plugin === 'compact') return [{ kind: 'compaction-marker' }]
       const source = d.source as { form?: string; summary?: string }
       const text = textOf(d.content)
       return [{
@@ -90,6 +95,13 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
         meta: d.meta,
       }]
     }
+    // Every compaction event is log-only; the marker above IS the durable
+    // visualization. start/end additionally drive the LIVE indicator, which
+    // only the controller consumes (ruling 7). summary/prune render nothing.
+    case 'compaction/start':
+      return [{ kind: 'compaction-live', phase: 'start' }]
+    case 'compaction/end':
+      return [{ kind: 'compaction-live', phase: 'end' }]
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':

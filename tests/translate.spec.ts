@@ -191,3 +191,26 @@ describe('turn-end reason table (spec §3.2 exhaustive-with-named-default)', () 
     })
   }
 })
+
+describe('compaction (spec §4.1, rulings 6 and 7)', () => {
+  it('a compact checkpoint becomes the permanent marker, NOT a context card', () => {
+    expect(translateSessionEvent({ type: 'user/message', data: {
+      content: [{ type: 'text', text: 'summary of the earlier conversation' }],
+      source: { kind: 'plugin', plugin: 'compact', compactionId: 'k1' },
+    } })).toEqual([{ kind: 'compaction-marker' }])
+  })
+  it('every other plugin source keeps the context-card path', () => {
+    expect(translateSessionEvent({ type: 'user/message', data: {
+      content: [{ type: 'text', text: 'note' }],
+      source: { kind: 'plugin', plugin: 'skills' },
+    } })).toEqual([{ kind: 'context-card', label: 'plugin', summary: undefined, text: 'note' }])
+  })
+  it('start and end drive the live indicator; summary and prune render nothing', () => {
+    expect(translateSessionEvent({ type: 'compaction/start', data: { compactionId: 'k1', turn: 3 } }))
+      .toEqual([{ kind: 'compaction-live', phase: 'start' }])
+    expect(translateSessionEvent({ type: 'compaction/end', data: { compactionId: 'k1', turn: 3 } }))
+      .toEqual([{ kind: 'compaction-live', phase: 'end' }])
+    expect(translateSessionEvent({ type: 'compaction/summary', data: { compactionId: 'k1' } })).toEqual([])
+    expect(translateSessionEvent({ type: 'compaction/prune', data: { shadowedSeqs: [1, 2] } })).toEqual([])
+  })
+})
