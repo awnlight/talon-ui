@@ -280,3 +280,83 @@ describe('terminal card (bash/pwsh, spec §4.2 / D12)', () => {
     expect(cell.render(80)).toEqual(['◆ bash', HERE, '$ ', 'out'])
   })
 })
+
+/** `edit` and `write` persist their applied hunks as `tool/result.meta`; a
+ * create records none and `str_replace_editor` publishes no meta at all, so
+ * those reconstruct the change from the call arguments — the same fallback
+ * dsh's own write presenter takes. */
+describe('diff card (edit/write/str_replace_editor, spec §4.2 / D12)', () => {
+  const meta = (diffs: unknown): ToolResult => ({ isError: false, errorCode: undefined, resultText: 'ok', meta: { diffs } })
+
+  it('heads on the file path — not the first string argument the model happened to send', () => {
+    expect(card('edit', { old_string: 'a', file_path: 'src/a.ts', new_string: 'b' }).render(80)[0]).toBe('◇ edit · src/a.ts')
+    expect(card('str_replace_editor', { command: 'str_replace', path: 'src/a.ts' }).render(80)[0]).toBe('◇ str_replace_editor · src/a.ts')
+  })
+
+  it('renders the applied hunks from meta, with the path header suppressed by the head', () => {
+    const cell = card('edit', { file_path: 'src/a.ts' })
+    cell.settle(meta([{ path: 'src/a.ts', oldText: 'let x = 1', newText: 'const x = 1' }]))
+    expect(cell.render(80)).toEqual(['◆ edit · src/a.ts', '  1 − let x = 1', '  1 + const x = 1', '└ +1 −1 · 1 file'])
+  })
+
+  it('falls back to the arguments when a create recorded no hunks (write)', () => {
+    const cell = card('write', { file_path: 'new.ts', content: 'a\nb' })
+    cell.settle({ isError: false, errorCode: undefined, resultText: 'wrote new.ts', meta: { diffs: [] } })
+    expect(cell.render(80)).toEqual(['◆ write · new.ts', '  1 + a', '  2 + b', '└ +2 −0 · 1 file'])
+  })
+
+  it('falls back to the arguments for edit and both diff-shaped str_replace_editor commands', () => {
+    const edit = card('edit', { file_path: 'a.ts', old_string: 'x', new_string: 'y' })
+    edit.settle(ok('edited'))
+    expect(edit.render(80)).toEqual(['◆ edit · a.ts', '  1 − x', '  1 + y', '└ +1 −1 · 1 file'])
+
+    const create = card('str_replace_editor', { command: 'create', path: 'a.ts', file_text: 'hello' })
+    create.settle(ok('created'))
+    expect(create.render(80)).toEqual(['◆ str_replace_editor · a.ts', '  1 + hello', '└ +1 −0 · 1 file'])
+
+    const replace = card('str_replace_editor', { command: 'str_replace', path: 'a.ts', old_str: 'x', new_str: 'y' })
+    replace.settle(ok('replaced'))
+    expect(replace.render(80)).toEqual(['◆ str_replace_editor · a.ts', '  1 − x', '  1 + y', '└ +1 −1 · 1 file'])
+  })
+
+  it('reads an absent old side as a pure insertion, whichever tool sent it', () => {
+    const edit = card('edit', { file_path: 'a.ts', new_string: 'y' })   // an edit that only adds
+    edit.settle(ok('edited'))
+    expect(edit.render(80)).toEqual(['◆ edit · a.ts', '  1 + y', '└ +1 −0 · 1 file'])
+
+    const replace = card('str_replace_editor', { command: 'str_replace', path: 'a.ts', new_str: 'y' })
+    replace.settle(ok('replaced'))
+    expect(replace.render(80)).toEqual(['◆ str_replace_editor · a.ts', '  1 + y', '└ +1 −0 · 1 file'])
+  })
+
+  it('treats a non-string content argument as no content at all', () => {
+    const cell = card('write', { file_path: 'a.ts', content: 12 })
+    cell.settle(ok('wrote'))
+    expect(cell.render(80)).toEqual(['◆ write · a.ts', '└ +0 −0 · 1 file'])
+  })
+
+  it('renders str_replace_editor view/insert as plain result text — they are not diffs', () => {
+    const view = card('str_replace_editor', { command: 'view', path: 'a.ts' })
+    view.settle(ok('1\tconst x = 1'))
+    expect(view.render(80)).toEqual(['◆ str_replace_editor · a.ts', '1\\x09const x = 1'])
+  })
+
+  it('shows the failure, not a diff of a change that never landed', () => {
+    const cell = card('edit', { file_path: 'a.ts', old_string: 'x', new_string: 'y' }, colored)
+    cell.settle(failed('old_string did not appear verbatim'))
+    expect(cell.render(80)).toEqual([colored.error('◆ edit · a.ts'), colored.dim('old_string did not appear verbatim')])
+  })
+
+  it('falls back to plain text when the arguments cannot describe a change either', () => {
+    const cell = card('edit', undefined)
+    cell.settle(ok('done'))
+    expect(cell.render(80)).toEqual(['◆ edit', 'done'])
+  })
+
+  it('folds a long diff like every other card, and counts its lines width-free', () => {
+    const cell = card('write', { file_path: 'big.ts', content: Array.from({ length: 12 }, (_, i) => `l${i}`).join('\n') })
+    cell.settle(ok('wrote'))
+    expect(cell.contentLineCount()).toBe(1 + 6 + 1)      // head + the fold + the marker row
+    expect(cell.render(80)).toContain('… 7 more lines …')
+  })
+})

@@ -15,6 +15,7 @@ import { homedir } from 'node:os'
 import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
 import { displayText, type Palette } from '../../theme/palette.js'
 import { wrapPlain } from './cells.js'
+import { diffsFromMeta, renderFileDiffs, type FileDiff } from './diff-render.js'
 
 export type ToolCardClass = 'terminal' | 'diff' | 'read' | 'search' | 'web' | 'generic'
 
@@ -49,7 +50,7 @@ export interface ToolResult { isError: boolean; errorCode: string | undefined; r
  * `description`). Read at CALL time, so a pending card already says what it
  * is doing. */
 export interface ToolHead { key?: string; note?: string }
-export type ToolHeadBuilder = (args: unknown) => ToolHead
+export type ToolHeadBuilder = (call: ToolCall) => ToolHead
 
 /** The per-class seam (ruling 4). A body builder is PURE and WIDTH-FREE: it
  * returns logical content lines (ONE logical line per entry — the fold and the
@@ -57,7 +58,7 @@ export type ToolHeadBuilder = (args: unknown) => ToolHead
  * reports an outcome the tool itself did not flag, so the shared head tone and
  * the failed-forces-expanded law stay in one place. */
 export interface ToolBody { lines: string[]; failed?: boolean }
-export type ToolBodyBuilder = (args: unknown, result: ToolResult, palette: Palette) => ToolBody
+export type ToolBodyBuilder = (call: ToolCall, result: ToolResult, palette: Palette) => ToolBody
 
 /** Split, escape and dim one string into body entries. */
 function dimLines(text: string, palette: Palette): string[] {
@@ -72,13 +73,13 @@ function stringArg(args: unknown, name: string): string | undefined {
 
 /** Every class without a head of its own: the first non-empty string the model
  * passed (the `generic` rule, spec §4.2). */
-const defaultHead: ToolHeadBuilder = (args) => {
-  for (const value of Object.values(args ?? {})) if (typeof value === 'string' && value !== '') return { key: value }
+const defaultHead: ToolHeadBuilder = (call) => {
+  for (const value of Object.values(call.args ?? {})) if (typeof value === 'string' && value !== '') return { key: value }
   return {}
 }
 
 /** Until each class lands: the flattened result text, dim, one row per line. */
-const plainResultBody: ToolBodyBuilder = (_args, result, palette) =>
+const plainResultBody: ToolBodyBuilder = (_call, result, palette) =>
   ({ lines: result.resultText === '' ? [] : dimLines(result.resultText, palette) })
 
 // ── terminal (bash, pwsh) ───────────────────────────────────────────────────
@@ -112,9 +113,9 @@ function abbreviateHome(path: string): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }
 
-const terminalHead: ToolHeadBuilder = (args) => ({ key: stringArg(args, 'command'), note: stringArg(args, 'description') })
+const terminalHead: ToolHeadBuilder = ({ args }) => ({ key: stringArg(args, 'command'), note: stringArg(args, 'description') })
 
-const terminalBody: ToolBodyBuilder = (args, result, palette) => {
+const terminalBody: ToolBodyBuilder = ({ args }, result, palette) => {
   // The cwd the command actually ran in: its own workdir, else the session
   // workspace — which talon chdir's into on resume, so process.cwd() IS it.
   const cwd = stringArg(args, 'workdir') ?? process.cwd()
@@ -135,9 +136,51 @@ const terminalBody: ToolBodyBuilder = (args, result, palette) => {
   }
 }
 
+// ── diff (edit, write, str_replace_editor) ──────────────────────────────────
+// `edit` and `write` persist their applied hunks as `tool/result.meta`; a
+// create records NONE (write.ts:96) and `str_replace_editor` publishes no meta
+// at all, so those reconstruct the change from the call arguments — which is
+// exactly the fallback dsh's own write presenter takes (write.ts:146).
+
+/** The file a diff-class call names: `file_path` for the fs tools, `path` for
+ * `str_replace_editor`. */
+function diffPath(args: unknown): string | undefined {
+  return stringArg(args, 'file_path') ?? stringArg(args, 'path')
+}
+
+const diffHead: ToolHeadBuilder = ({ args }) => ({ key: diffPath(args) })
+
+/** The change as the ARGUMENTS describe it, for the calls the log has no
+ * applied hunks for. `undefined` means this call is not a diff at all —
+ * `str_replace_editor`'s `view` and `insert` forms, which dsh itself presents
+ * as generic cards. */
+function callTimeDiffs(call: ToolCall): FileDiff[] | undefined {
+  const path = diffPath(call.args)
+  if (path === undefined) return undefined
+  const args = call.args as Record<string, unknown>
+  if (call.name === 'write') return [{ path, oldText: null, newText: text(args.content) }]
+  if (call.name === 'edit') return [{ path, oldText: stringArg(call.args, 'old_string') ?? null, newText: text(args.new_string) }]
+  if (args.command === 'create') return [{ path, oldText: null, newText: text(args.file_text) }]
+  if (args.command === 'str_replace') return [{ path, oldText: stringArg(call.args, 'old_str') ?? null, newText: text(args.new_str) }]
+  return undefined
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+const diffBody: ToolBodyBuilder = (call, result, palette) => {
+  // A failed mutation applied nothing: show what went wrong rather than a diff
+  // of a change that never landed (dsh's edit presenter drops to generic too).
+  if (result.isError) return plainResultBody(call, result, palette)
+  const diffs = diffsFromMeta(result.meta) ?? callTimeDiffs(call)
+  if (diffs === undefined) return plainResultBody(call, result, palette)
+  return { lines: renderFileDiffs(diffs, palette, diffPath(call.args)) }
+}
+
 export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHeadBuilder> = {
   terminal: terminalHead,
-  diff: defaultHead,
+  diff: diffHead,
   read: defaultHead,
   search: defaultHead,
   web: defaultHead,
@@ -147,7 +190,7 @@ export const TOOL_HEAD_BUILDERS: Record<ToolCardClass | 'unregistered', ToolHead
 
 export const TOOL_BODY_BUILDERS: Record<ToolCardClass | 'unregistered', ToolBodyBuilder> = {
   terminal: terminalBody,
-  diff: plainResultBody,
+  diff: diffBody,
   read: plainResultBody,
   search: plainResultBody,
   web: plainResultBody,
@@ -211,7 +254,7 @@ export class ToolCardCell implements Component {
    * outcome tone, the body comes from this class's builder. */
   settle(result: ToolResult): void {
     this.result = result
-    const body = TOOL_BODY_BUILDERS[classifyTool(this.call.name)](this.call.args, result, this.palette)
+    const body = TOOL_BODY_BUILDERS[classifyTool(this.call.name)](this.call, result, this.palette)
     this.failed = result.isError || body.failed === true
     this.presented = this.failed ? body.lines : foldPreview(body.lines, this.palette)
     this.cache = undefined
@@ -233,7 +276,7 @@ export class ToolCardCell implements Component {
   private head(): string {
     const tone = this.result === undefined ? this.palette.warning : this.failed ? this.palette.error : this.palette.success
     const glyph = this.result === undefined ? PENDING_GLYPH : SETTLED_GLYPH
-    const { key, note } = TOOL_HEAD_BUILDERS[classifyTool(this.call.name)](this.call.args)
+    const { key, note } = TOOL_HEAD_BUILDERS[classifyTool(this.call.name)](this.call)
     const parts = [`${glyph} ${oneLine(this.call.name)}`]
     if (key !== undefined) parts.push(oneLine(key))
     if (note !== undefined) parts.push(oneLine(note))

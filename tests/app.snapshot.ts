@@ -6,7 +6,7 @@ import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -324,6 +324,42 @@ describe('talon snapshots', () => {
     ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 3, callId: 'c3', name: 'bash', arguments: '{"command":"pnpm build","description":"Build the bundle"}' } })
     await terminal.waitForFrame(before)
     await checkpoint('card-terminal', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-diff', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 22)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // An `edit` settling from the applied hunks dsh persists as meta (path
+    // header suppressed — the head already names the file), then a `write`
+    // create, whose meta records NO hunks so the card rebuilds the change from
+    // the call arguments. Both hunks are shaped exactly as computeHunkDiffs
+    // emits them: three context lines a side, `oldText: null` for an insertion.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Rename the flag.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'edit', arguments: '{"file_path":"src/flags.ts","old_string":"legacy","new_string":"modern"}' } })
+    ctx.emit('session/event', agent.session, {
+      type: 'tool/result',
+      data: {
+        turn: 1, step: 1,
+        message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'edited src/flags.ts' }] }] },
+        meta: { diffs: [{ path: 'src/flags.ts', oldText: 'export const flags = {\n  legacy: true,\n}', newText: 'export const flags = {\n  modern: true,\n}' }] },
+      },
+    })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 2, callId: 'c2', name: 'write', arguments: '{"file_path":"src/notes.md","content":"# Notes\\n\\nRenamed the flag."}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'wrote src/notes.md' }] }] }, meta: { diffs: [] } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-diff', terminal)
 
     await controller.dispose()
   })
