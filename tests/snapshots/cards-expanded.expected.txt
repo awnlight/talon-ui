@@ -1,0 +1,44 @@
+terminal 72x22 buffer=normal length=22 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @19,2
+0| "You"
+  style 0-2 bold underline
+1| "Rename the flag."
+2| <blank>
+3| "◇ context · skill-catalog · 2 lines"
+  style 0-34 dim
+4| "writing-plans"
+  style 0-12 dim
+5| "executing-plans"
+  style 0-14 dim
+6| <blank>
+7| "talon"
+  style 0-4 fg-13 bold underline
+8| "Looking at the flag."
+9| <blank>
+10| "◆ read · src/flags.ts:9"
+  style 0-22 fg-2
+11| "   9 export const flags = {"
+  style 2-3 dim
+  style 5-10 fg-6
+  style 12-16 fg-6
+12| "  10   modern: true,"
+  style 2-3 dim
+  style 15-18 fg-3
+13| "  11 }"
+  style 2-3 dim
+14| "└ 120 lines"
+  style 0-10 dim
+15| <blank>
+16| "talon"
+  style 0-4 fg-13 bold underline
+17| "Renamed it."
+18| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+19| "❯"
+  style 0-0 dim
+  style 2-2 inverse
+20| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+21| "/workspace/talon-ui"
+  style 0-18 dim

@@ -7,6 +7,7 @@
 import { Terminal as XtermTerminal } from '@xterm/headless'
 import type { IBufferCell } from '@xterm/headless'
 import type { Terminal } from '@earendil-works/pi-tui'
+import { onBrandGradient } from '../theme/palette.js'
 
 const FRAME_END = '\x1b[?2026l'
 
@@ -178,7 +179,10 @@ export class HeadlessTerminal implements Terminal {
         const cell = line.getCell(x)
         /* v8 ignore next -- defensive: getCell(x) never returns undefined for x in [0, line.length) on a real xterm buffer line */
         if (!cell) continue
-        if (cell.isFgRGB()) violations.push(`${y}:${x} rgb-fg`)
+        // The ONE exemption (spec §7.1): an rgb FOREGROUND that sits on the
+        // brand ramp. Every other rgb foreground, and every rgb background,
+        // still violates.
+        if (cell.isFgRGB() && !onBrandGradient(cell.getFgColor())) violations.push(`${y}:${x} rgb-fg`)
         if (cell.isBgRGB()) violations.push(`${y}:${x} rgb-bg`)
         if (cell.isFgPalette() && cell.getFgColor() > 15) violations.push(`${y}:${x} extended-fg-${cell.getFgColor()}`)
         if (cell.isBgPalette() && cell.getBgColor() > 15) violations.push(`${y}:${x} extended-bg-${cell.getBgColor()}`)

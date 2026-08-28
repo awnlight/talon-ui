@@ -1,0 +1,38 @@
+terminal 72x20 buffer=normal length=20 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @15,2
+0| "You"
+  style 0-2 bold underline
+1| "Where is the flag used?"
+2| <blank>
+3| "◆ grep · modern"
+  style 0-14 fg-2
+4| "src/flags.ts"
+  style 0-11 bold
+5| "  L10:   modern: true,"
+  style 0-21 dim
+6| "src/app.ts"
+  style 0-9 bold
+7| "  L3: if (flags.modern) {"
+  style 0-24 dim
+8| "└ 42 matches · truncated"
+  style 0-23 dim
+9| <blank>
+10| "◆ glob · src/**/*.test.ts"
+  style 0-24 fg-2
+11| "src/flags.test.ts"
+  style 0-16 dim
+12| "src/app.test.ts"
+  style 0-14 dim
+13| "└ 2 paths"
+  style 0-8 dim
+14| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+15| "⚙"
+  style 0-0 dim
+  style 2-2 inverse
+16| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+17| "/workspace/talon-ui"
+  style 0-18 dim
+18-19| <blank>

@@ -1,0 +1,45 @@
+terminal 108x20 buffer=normal length=21 base=1 viewport=1
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @17,2
+0| "/palette"
+  style 0-7 dim
+1| <blank>
+2| "talon palette · dark"
+  style 0-19 dim
+3| "role       open  close  purpose"
+  style 0-30 dim
+4| "text       —     —      body text; inherits the terminal default foreground"
+  style 0-74 dim
+5| "dim        2;39  22;39  secondary text; fades relative to the terminal foreground on both schemes"
+  style 0-96 dim
+6| "accent     95    39     interactive highlights and the talon role header"
+  style 0-71 dim
+7| "brand      36    39     talon brand accents (ANSI fallback for truecolor teal)"
+  style 0-77 dim
+8| "code       36    39     inline code and code blocks"
+  style 0-50 dim
+9| "success    32    39     successful results and diff additions"
+  style 0-60 dim
+10| "warning    33    39     pending states and cautions"
+  style 0-50 dim
+11| "error      31    39     failures and diff removals"
+  style 0-49 dim
+12| "bold       1     22     role headers and emphasis"
+  style 0-48 dim
+13| "italic     3     23     reasoning text"
+  style 0-37 dim
+14| "underline  4     24     role headers and links"
+  style 0-45 dim
+15| "strike     9     29     completed todo items"
+  style 0-43 dim
+16| "selected   7     27     active row in selectors (reverse video)"
+  style 0-62 dim
+17| "────────────────────────────────────────────────────────────────────────────────────────────────────────────"
+  style 0-107 dim
+18| "❯"
+  style 0-0 dim
+  style 2-2 inverse
+19| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+20| "/workspace/talon-ui"
+  style 0-18 dim

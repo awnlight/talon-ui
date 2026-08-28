@@ -1,0 +1,47 @@
+terminal 72x22 buffer=normal length=22 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @16,2
+0| "You"
+  style 0-2 bold underline
+1| "Rename the flag."
+2| <blank>
+3| "◆ edit · src/flags.ts"
+  style 0-20 fg-2
+4| "  1   export const flags = {"
+  style 2-2 dim
+  style 4-27 dim
+5| "  2 −   legacy: true,"
+  style 2-2 dim
+  style 4-20 fg-1
+6| "  2 +   modern: true,"
+  style 2-2 dim
+  style 4-20 fg-2
+7| "  3   }"
+  style 2-2 dim
+  style 4-6 dim
+8| "└ +1 −1 · 1 file"
+  style 0-15 dim
+9| <blank>
+10| "◆ write · src/notes.md"
+  style 0-21 fg-2
+11| "  1 + # Notes"
+  style 2-2 dim
+  style 4-12 fg-2
+12| "  2 +"
+  style 2-2 dim
+  style 4-5 fg-2
+13| "  3 + Renamed the flag."
+  style 2-2 dim
+  style 4-22 fg-2
+14| "└ +3 −0 · 1 file"
+  style 0-15 dim
+15| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+16| "⚙"
+  style 0-0 dim
+  style 2-2 inverse
+17| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+18| "/workspace/talon-ui"
+  style 0-18 dim
+19-21| <blank>

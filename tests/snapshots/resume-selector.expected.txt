@@ -1,6 +1,6 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @10,72
+cursor hidden @11,0
 0| <blank>
 1| "─ resume ───────────────────────────────────────────────────────────────"
   style 0-71 dim
@@ -19,7 +19,9 @@ cursor hidden @10,72
   style 0-38 fg-1
 8| "────────────────────────────────────────────────────────────────────────"
   style 0-71 fg-3
-9| <blank>
+9| "❯"
+  style 0-0 dim
+  style 2-2 inverse
 10| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
 11-17| <blank>

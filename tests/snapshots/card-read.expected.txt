@@ -1,0 +1,33 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @10,2
+0| "You"
+  style 0-2 bold underline
+1| "Show me the flag."
+2| <blank>
+3| "◆ read · src/flags.ts:9"
+  style 0-22 fg-2
+4| "   9 // the feature flags"
+  style 2-3 dim
+  style 5-24 dim
+5| "  10 export const flags = {"
+  style 2-3 dim
+  style 5-10 fg-6
+  style 12-16 fg-6
+6| "  11   modern: true,"
+  style 2-3 dim
+  style 15-18 fg-3
+7| "  12 }"
+  style 2-3 dim
+8| "└ 120 lines"
+  style 0-10 dim
+9| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+10| "⚙"
+  style 0-0 dim
+  style 2-2 inverse
+11| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+12| "/workspace/talon-ui"
+  style 0-18 dim
+13-17| <blank>

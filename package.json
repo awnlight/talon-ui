@@ -51,7 +51,9 @@
     }
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "^0.84.1"
+    "@earendil-works/pi-tui": "^0.84.1",
+    "highlight.js": "11.12.0",
+    "saxes": "6.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",

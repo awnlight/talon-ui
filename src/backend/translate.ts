@@ -1,4 +1,5 @@
 import type { AppEvent, ContentBlockLike, Notice } from './app-events.js'
+import type { UsageSample } from './metrics.js'
 
 interface RawEvent { type: string; data: unknown; time?: number }
 
@@ -10,6 +11,19 @@ function turnEndNotice(reason: { kind: string; error?: { message?: string } }): 
     case 'max-tokens': return { text: 'Turn stopped: max tokens reached.', tone: 'warning' }
     case 'blocked': return { text: 'Turn blocked.', tone: 'warning' }
     default: return { text: `Turn ended: ${reason.kind}.`, tone: 'warning' } // exhaustive-with-named-default (spec §3.2)
+  }
+}
+
+/** dsh's TokenUsage, normalized to the four buckets the footer folds. The
+ * optional cache buckets are absent on providers that do not cache. */
+function usageOf(raw: unknown): UsageSample {
+  const usage = (raw ?? {}) as Record<string, unknown>
+  const count = (name: string): number => (typeof usage[name] === 'number' ? usage[name] : 0)
+  return {
+    inputTokens: count('inputTokens'),
+    outputTokens: count('outputTokens'),
+    cacheReadTokens: count('cacheReadTokens'),
+    cacheWriteTokens: count('cacheWriteTokens'),
   }
 }
 
@@ -29,13 +43,20 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       // prompt path.
       const kind = (d.source as { kind?: string } | undefined)?.kind ?? 'user'
       if (kind === 'user') return [{ kind: 'user-message', text: textOf(d.content) }]
+      // A compaction checkpoint FIRST (ruling 6): dsh replaces the shadowed
+      // history with one plugin-sourced user message carrying this exact
+      // marker (compaction/src/checkpoint.ts:19). It is the permanent
+      // bookmark, never a ContextCard.
+      if (kind === 'plugin' && (d.source as { plugin?: string }).plugin === 'compact') return [{ kind: 'compaction-marker' }]
       const source = d.source as { form?: string; summary?: string }
       const text = textOf(d.content)
       return [{
         kind: 'context-card',
         label: kind,
         summary: source.form === 'notice' ? source.summary : undefined,
-        lines: text === '' ? 0 : text.split('\n').length,
+        // The body travels with the card: Ctrl+O's expanded mode shows it, and
+        // the collapsed line counts it (spec §4.2, T2 carryover 11).
+        text,
       }]
     }
     case 'turn/start':
@@ -47,7 +68,10 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
     case 'step/end':
       return [{ kind: 'step-end', turn: d.turn, step: d.step, time: event.time }]
     case 'assistant/chunk': {
-      const chunk = d.chunk as { type: string; index?: number; text?: string }
+      const chunk = d.chunk as { type: string; index?: number; text?: string; usage?: unknown }
+      // The early usage sample: it survives a request that fails after it, and
+      // the settled message reports the same step again — the fold replaces.
+      if (chunk.type === 'usage') return [{ kind: 'usage', turn: d.turn, step: d.step, usage: usageOf(chunk.usage) }]
       if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
         return [{
           kind: 'stream-delta', turn: d.turn, step: d.step, index: chunk.index ?? 0,
@@ -57,15 +81,72 @@ export function translateSessionEvent(event: RawEvent): AppEvent[] {
       return []
     }
     case 'assistant/message':
-      return [{ kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] }]
-    case 'tool/call': {
-      const raw = d.arguments
-      const args = typeof raw === 'string'
-        ? (() => { try { return JSON.parse(raw) as Record<string, unknown> } catch { return undefined } })()
-        : (raw as Record<string, unknown> | undefined)
-      const command = args?.command
-      return [{ kind: 'tool-call', callId: String(d.callId ?? ''), name: String(d.name ?? ''), preview: typeof command === 'string' ? command : undefined }]
+      return [
+        { kind: 'stream-settle', turn: d.turn, step: d.step, content: d.message?.content ?? [] },
+        ...d.usage === undefined ? [] : [{ kind: 'usage' as const, turn: d.turn, step: d.step, usage: usageOf(d.usage) }],
+      ]
+    case 'request/context':
+      return [{
+        kind: 'request-context',
+        model: String(d.model ?? ''),
+        contextWindow: typeof d.contextWindow === 'number' ? d.contextWindow : undefined,
+      }]
+    case 'agent/inbox/spliced': {
+      const inserted = Array.isArray(d.inserted) ? d.inserted.length : 0
+      return [{
+        kind: 'inbox-spliced',
+        inserted,
+        removed: typeof d.removedCount === 'number' ? d.removedCount : 0,
+        cancelled: d.outcome === 'canceled',
+      }]
     }
+    case 'tool/call': {
+      // dsh records `arguments` as the model's RAW unparsed JSON string
+      // (session types.d.ts:291). Object-shaped fixtures keep working: they
+      // are re-encoded so `rawArguments` is always a string the card can show.
+      const raw = d.arguments
+      const rawArguments = typeof raw === 'string' ? raw : raw === undefined ? '' : JSON.stringify(raw)
+      const args = typeof raw === 'string'
+        ? (() => { try { return JSON.parse(raw) as unknown } catch { return undefined } })()
+        : (raw as unknown)
+      return [{ kind: 'tool-call-card', turn: d.turn, step: d.step, callId: String(d.callId ?? ''), name: String(d.name ?? ''), args, rawArguments }]
+    }
+    case 'tool/result': {
+      // ToolResultMessage.content is exactly one ToolResultBlock, and THAT
+      // block's `content` carries the model-facing result blocks (llm
+      // message.d.ts:140-144). Flattening follows dsh's own presenter: text
+      // verbatim, anything else pretty-printed JSON, and an empty result
+      // named by its failure identity (ui-cordis client.js:32-36).
+      const block = (d.message as { content?: unknown[] } | undefined)?.content?.[0] as
+        { toolCallId?: string; content?: ContentBlockLike[]; isError?: boolean } | undefined
+      const error = d.error as { name?: string; code?: string } | undefined
+      const text = (block?.content ?? []).map((b) => (b.type === 'text' ? b.text ?? '' : JSON.stringify(b, null, 2))).join('\n')
+      return [{
+        kind: 'tool-result-card',
+        callId: String(block?.toolCallId ?? ''),
+        isError: block?.isError === true || error !== undefined,
+        errorCode: error?.code,
+        resultText: text !== '' || error === undefined ? text : `${error.name}: ${error.code}`,
+        meta: d.meta,
+      }]
+    }
+    // Every compaction event is log-only; the marker above IS the durable
+    // visualization. start/end additionally drive the LIVE indicator, which
+    // only the controller consumes (ruling 7). summary/prune render nothing.
+    case 'compaction/start':
+      return [{ kind: 'compaction-live', phase: 'start' }]
+    case 'compaction/end':
+      return [{ kind: 'compaction-live', phase: 'end' }]
+    // `llm/retry-started` and a successful recovery render NOTHING: the
+    // notice below already said a retry is happening, and the re-stream
+    // speaks for itself. Exhaustion arrives as an ordinary error turn-end.
+    case 'llm/retry':
+      return [{
+        kind: 'retry-notice', turn: d.turn, step: d.step, retry: d.retry,
+        limit: d.mode === 'always' ? '∞' : d.maxRetries,
+        delayMs: d.delayMs,
+        message: String((d.failure as { message?: unknown } | undefined)?.message ?? ''),
+      }]
     case 'approval/asked':
       return [{ kind: 'approval-asked', id: String(d.id), toolName: String(d.toolName ?? '') }]
     case 'approval/decided':

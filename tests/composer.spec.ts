@@ -118,11 +118,14 @@ describe('Composer', () => {
     )
     const borderlessRows = composer.editor.render(60) // composer.editor is focused (setup())
     tui.setFocus(framed) // match focus so the cursor marker doesn't skew the comparison
-    const framedRows = framed.render(60)
-    expect(framedRows[0]).toBe('─'.repeat(60))
-    expect(framedRows[framedRows.length - 1]).toBe('─'.repeat(60))
+    // The composer lays its editor out two columns narrower and shifts every
+    // row right by that much, so the `❯` prompt sits ON the input line (§4.3).
+    const framedRows = framed.render(58)
+    expect(framedRows[0]).toBe('─'.repeat(58))
+    expect(framedRows[framedRows.length - 1]).toBe('─'.repeat(58))
     expect(framedRows.length).toBe(borderlessRows.length + 2)
-    expect(borderlessRows).toEqual(framedRows.slice(1, -1))
+    expect(borderlessRows[0]!.startsWith(`${createPalette(true).dim('❯')} `)).toBe(true)
+    expect(borderlessRows.map((row, i) => (i === 0 ? row.slice(borderlessRows[0]!.indexOf(' ', 1) + 1) : row.slice(2)))).toEqual(framedRows.slice(1, -1))
   })
   it('keeps autocomplete rows and drops exactly the two border rows (T2 carryover 1)', async () => {
     const term = new HeadlessTerminal(60, 20)
@@ -166,7 +169,7 @@ describe('Composer', () => {
     const rows = composer.editor.render(60)
     const text = rows.join('\n')
     expect(names.filter((n) => text.includes(n))).toEqual(['compact', 'exit', 'feedback', 'goal', 'help']) // the 6th is paged out
-    expect(rows.at(-1)!.trimEnd()).toBe('\x1b[2;39m  (1/6)\x1b[22;39m')
+    expect(rows.at(-1)!.trimEnd()).toBe('  \x1b[2;39m  (1/6)\x1b[22;39m')  // shifted under the prompt column
     tui.stop()
   })
   it('attachSlashCompletion drives the menu, refreshCompletion re-queries it in place', async () => {

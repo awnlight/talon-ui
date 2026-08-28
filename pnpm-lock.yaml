@@ -11,6 +11,12 @@ importers:
       '@earendil-works/pi-tui':
         specifier: ^0.84.1
         version: 0.84.1
+      highlight.js:
+        specifier: 11.12.0
+        version: 11.12.0
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -572,6 +578,10 @@ packages:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
 
+  highlight.js@11.12.0:
+    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
+    engines: {node: '>=12.0.0'}
+
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
 
@@ -681,6 +691,10 @@ packages:
     resolution: {integrity: sha512-RXOqwaPsBGjMNMa4sQjDjHieHEZDFoj/Rdr46l2MU5DfEs16wHJPC2RPTPHWhNl+M3aI472LLqFkFKut4SblOg==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
+
+  saxes@6.0.0:
+    resolution: {integrity: sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==}
+    engines: {node: '>=v12.22.7'}
 
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
@@ -878,6 +892,9 @@ packages:
   wrap-ansi@8.1.0:
     resolution: {integrity: sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==}
     engines: {node: '>=12'}
+
+  xmlchars@2.2.0:
+    resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
 snapshots:
 
@@ -1296,6 +1313,8 @@ snapshots:
 
   has-flag@4.0.0: {}
 
+  highlight.js@11.12.0: {}
+
   html-escaper@2.0.2: {}
 
   is-fullwidth-code-point@3.0.0: {}
@@ -1421,6 +1440,10 @@ snapshots:
       '@rollup/rollup-win32-x64-gnu': 4.62.4
       '@rollup/rollup-win32-x64-msvc': 4.62.4
       fsevents: 2.3.3
+
+  saxes@6.0.0:
+    dependencies:
+      xmlchars: 2.2.0
 
   semver@7.8.5: {}
 
@@ -1602,3 +1625,5 @@ snapshots:
       ansi-styles: 6.2.3
       string-width: 5.1.2
       strip-ansi: 7.2.0
+
+  xmlchars@2.2.0: {}

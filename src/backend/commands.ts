@@ -6,6 +6,9 @@ import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
 export interface TalonCommandDeps {
   requestExit(): void
   statusLines(): string[]
+  /** The live paletteSpec table (D6): generated from the spec so the printed
+   * colours can never drift from the emitted ones. */
+  paletteTable(): string
   list(): readonly { name: string; description: string; input?: { hint: string } }[]
 }
 
@@ -22,6 +25,10 @@ export function registerTalonCommands(
     commands.register({
       name: 'status', description: 'Show session status',
       handler: () => ({ kind: 'success', text: deps.statusLines().join('\n') }),
+    }),
+    commands.register({
+      name: 'palette', description: 'Print the talon colour palette',
+      handler: () => ({ kind: 'success', text: deps.paletteTable() }),
     }),
     commands.register({ name: 'exit', description: 'Exit talon', handler: exitHandler }),
     commands.register({ name: 'quit', description: 'Exit talon (alias of /exit)', handler: exitHandler }),

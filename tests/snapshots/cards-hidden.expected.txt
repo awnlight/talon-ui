@@ -1,0 +1,22 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @8,2
+0| "You"
+  style 0-2 bold underline
+1| "Rename the flag."
+2| <blank>
+3| "talon"
+  style 0-4 fg-13 bold underline
+4| "Looking at the flag."
+5| <blank>
+6| "Renamed it."
+7| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+8| "❯"
+  style 0-0 dim
+  style 2-2 inverse
+9| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+10| "/workspace/talon-ui"
+  style 0-18 dim
+11-17| <blank>

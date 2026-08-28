@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Text, TuiMainScreen } from '@earendil-works/pi-tui'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
-import { createPalette } from '../src/theme/palette.ts'
+import { createPalette, brandGradient } from '../src/theme/palette.ts'
 
 describe('HeadlessTerminal', () => {
   it('counts synchronized frames and resolves waitForFrame', async () => {
@@ -27,12 +27,33 @@ describe('HeadlessTerminal', () => {
     expect(snap).toContain('lifecycle started=1 stopped=1')
   })
 
+  it('exempts the brand ramp — and ONLY the brand ramp — from the truecolor gate (spec §7.1)', async () => {
+    const p = createPalette(true, 'dark', true)
+    const term = new HeadlessTerminal(40, 10)
+    const tui = new TuiMainScreen(term)
+    tui.addChild(new Text(brandGradient('talon', p), 0, 0))
+    tui.start()
+    await term.waitForFrame(0)
+    tui.stop()
+    expect(term.themeViolations()).toEqual([])
+  })
+
+  it('still flags an rgb BACKGROUND painted in a brand colour', async () => {
+    const term = new HeadlessTerminal(40, 10)
+    const tui = new TuiMainScreen(term)
+    tui.addChild(new Text('\x1b[48;2;45;212;191mbg\x1b[49m', 0, 0))
+    tui.start()
+    await term.waitForFrame(0)
+    tui.stop()
+    expect(term.themeViolations().some((v) => v.includes('rgb-bg'))).toBe(true)
+  })
+
   it('flags truecolor as a theme violation, accepts ANSI-16', async () => {
     const p = createPalette(true, 'dark')
     const term = new HeadlessTerminal(40, 10)
     const tui = new TuiMainScreen(term)
     tui.addChild(new Text(p.accent('ansi ok'), 0, 0))
-    tui.addChild(new Text('\x1b[38;2;45;212;191mtruecolor\x1b[39m', 0, 0))
+    tui.addChild(new Text('\x1b[38;2;255;136;0mtruecolor\x1b[39m', 0, 0))   // orange: nowhere near the brand ramp
     tui.start()
     await term.waitForFrame(0)
     tui.stop()

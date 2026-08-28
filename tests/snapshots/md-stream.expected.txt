@@ -1,0 +1,38 @@
+terminal 72x18 buffer=normal length=18 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+cursor hidden @15,2
+0| "You"
+  style 0-2 bold underline
+1| "Stream the fix."
+2| <blank>
+3| "talon"
+  style 0-4 fg-13 bold underline
+4| "Sketching the patch."
+  style 0-19 dim italic
+5| "Fix"
+  style 0-2 bold underline
+6| <blank>
+7| "- fast"
+  style 0-1 dim
+8| "- safe"
+  style 0-1 dim
+9| <blank>
+10| "```ts"
+  style 0-4 dim
+11| "  const n = 1 // count"
+  style 2-6 fg-6
+  style 12-12 fg-3
+  style 14-21 dim
+12| "  let m ="
+  style 2-4 fg-6
+13| "```"
+  style 0-2 dim
+14| "────────────────────────────────────────────────────────────────────────"
+  style 0-71 dim
+15| "◉"
+  style 0-0 dim
+  style 2-2 inverse
+16| "enter send · shift+enter newline · ctrl+c exit"
+  style 0-45 dim
+17| "/workspace/talon-ui"
+  style 0-18 dim

@@ -34,6 +34,34 @@ describe('performance floors (spec D7.3, D10)', () => {
     },
     120000
   )
+  // T3's own shape, measured rather than assumed (ruling 15): the block-commit
+  // optimization the spec parks at L59 is worth taking ONLY if the existing
+  // floor fails without it. Cards and Markdown are the expensive halves — a
+  // card settles a class builder and a Markdown body, and the mount cap has to
+  // keep evicting both — so this is the log that would break it if anything did.
+  it(
+    'a TOOL-HEAVY 100k-event log still renders a steady-state frame under 10ms',
+    async () => {
+      const t = new Transcript(createPalette(true), { mountCapLines: 5000 })
+      const body = ['# result', '', '- one', '- two', '', '```ts', 'const x = 1', '```'].join('\n')
+      for (let i = 0; i < 100_000; i += 4) {
+        const turn = i / 4
+        t.apply({ kind: 'tool-call-card', turn, step: 1, callId: `c${turn}`, name: 'bash', args: { command: `pnpm test ${turn}`, description: 'run the suite' }, rawArguments: '{}' })
+        t.apply({ kind: 'tool-result-card', callId: `c${turn}`, isError: false, errorCode: undefined, resultText: `12 passed\n0 failed\n[exit code: 0]`, meta: undefined })
+        t.apply({ kind: 'stream-settle', turn, step: 1, content: [{ type: 'text', text: body }] })
+        t.apply({ kind: 'turn-end', turn, notice: undefined })
+        if (turn % 1250 === 0) await new Promise((r) => setImmediate(r))
+      }
+      t.container.render(120) // warm
+      const start = performance.now()
+      for (let i = 0; i < 20; i++) t.container.render(120)
+      const perFrame = (performance.now() - start) / 20
+      console.log(`Measured per-frame (tool-heavy): ${perFrame.toFixed(3)}ms`)
+      console.log(`Mounted lines (tool-heavy): ${t.mountedLines(120)}`)
+      expect(perFrame).toBeLessThan(10)
+    },
+    120000
+  )
   it('same-width renders allocate nothing new (cache identity at scale)', () => {
     const t = new Transcript(createPalette(true), { mountCapLines: 2000 })
     for (let i = 0; i < 5_000; i++) t.apply({ kind: 'user-message', text: `msg ${i}` })

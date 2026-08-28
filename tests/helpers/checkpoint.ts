@@ -12,6 +12,19 @@ export const CHECKPOINTS = [
   'slash-autocomplete',
   'resume-selector',
   'context-card',
+  'md-settled',
+  'md-stream',
+  'card-terminal',
+  'card-diff',
+  'card-read',
+  'card-search',
+  'card-generic',
+  'cards-expanded',
+  'cards-hidden',
+  'palette-table',
+  'compaction-marker',
+  'footer-metrics',
+  'untrusted-controls',
 ] as const
 
 export type CheckpointName = (typeof CHECKPOINTS)[number]

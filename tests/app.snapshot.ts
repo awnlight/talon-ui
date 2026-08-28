@@ -1,12 +1,12 @@
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeadlessTerminal } from '../src/testing/headless-terminal.ts'
-import { createPalette } from '../src/theme/palette.ts'
+import { createPalette, paletteTable } from '../src/theme/palette.ts'
 import { createController } from '../src/app/controller.ts'
 import { ResumePanel } from '../src/ui/panels/resume-panel.ts'
 import { summarizeCandidate, type ResumeCandidate } from '../src/backend/sessions.ts'
 import { checkpoint, expectObserved } from './helpers/checkpoint.ts'
 
-const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card'] as const
+const OWNED = ['conversation-roundtrip', 'approval-panel', 'question-multiselect', 'plan-review', 'slash-autocomplete', 'resume-selector', 'context-card', 'md-settled', 'md-stream', 'card-terminal', 'card-diff', 'card-read', 'card-search', 'card-generic', 'cards-expanded', 'cards-hidden', 'palette-table', 'compaction-marker', 'footer-metrics'] as const
 afterAll(() => expectObserved(OWNED))
 
 /** Captures the registered provider so a checkpoint can drive a real ask()
@@ -55,6 +55,12 @@ async function type(terminal: HeadlessTerminal, keys: string[]): Promise<void> {
 }
 
 describe('talon snapshots', () => {
+  // The footer prints the workspace, and reads the git branch out of its
+  // `.git/HEAD`: freeze the cwd so no golden embeds the machine that ran it
+  // (the fake path has no repository, so the branch segment stays absent —
+  // gitBranch's own behaviour is pinned by tests/controller.spec.ts).
+  beforeEach(() => { vi.spyOn(process, 'cwd').mockReturnValue('/workspace/talon-ui') })
+
   it('conversation-roundtrip', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
     const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
@@ -228,6 +234,361 @@ describe('talon snapshots', () => {
     terminal.input('\x1b')                // empty query: esc cancels the panel
     await expect(picked).resolves.toBeUndefined()
     await terminal.waitForFrame(before)
+    await controller.dispose()
+  })
+
+  it('md-settled', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 18)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // A settled assistant message with markdown source (Task 2): heading,
+    // highlighted ts fence, list with inline bold — reasoning stays plain
+    // dim+italic above it (Ruling 16).
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Show the fix.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [
+      { type: 'reasoning', text: 'Checking the diff.' },
+      { type: 'text', text: '# Fix\n```ts\nconst n = 1 // count\n```\n- fast\n- **safe**' },
+    ] } } })
+    ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('md-settled', terminal)
+
+    await controller.dispose()
+  })
+
+  it('md-stream', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 18)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // A frame frozen MID-STREAM (Task 3): fixed text deltas cut a list item
+    // in half across chunks and leave a ts fence OPEN — the live Markdown
+    // rebuild renders bullets + the highlighted partial fence body, with
+    // trimPartialClosingFences keeping the open fence stable. No
+    // assistant/message before the checkpoint: this IS the live path.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Stream the fix.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'Sketching the patch.' } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 1, text: '# Fix\n\n- fast\n- sa' } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 1, text: 'fe\n\n```ts\nconst n = 1 // count\nlet m = ' } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('md-stream', terminal)
+
+    // Settle and close the turn after the frozen frame, so dispose() finds a
+    // quiet transcript (mirrors conversation-roundtrip).
+    const after = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [
+      { type: 'reasoning', text: 'Sketching the patch.' },
+      { type: 'text', text: '# Fix\n\n- fast\n- safe\n\n```ts\nconst n = 1 // count\nlet m = 2\n```' },
+    ] } } })
+    ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    await terminal.waitForFrame(after)
+    await controller.dispose()
+  })
+
+  it('card-terminal', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    // The cards render the cwd the command ran in (tool-cards.ts): freeze it so
+    // the committed golden does not embed this checkout's absolute path.
+    vi.spyOn(process, 'cwd').mockReturnValue('/workspace/talon-ui')
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 22)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // All three terminal-card tones in one frame (Task 6): a clean run in
+    // success, a non-zero exit the tool did NOT flag as an error yet the card
+    // colors red and refuses to fold, and a call still running in warning.
+    // Every result string is shaped exactly as dsh's `renderResult` emits it.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Run the checks.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{"command":"pnpm test","description":"Run the test suite"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '12 passed\n0 failed\n' }] }] } } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 2, callId: 'c2', name: 'bash', arguments: '{"command":"pnpm typecheck","description":"Check the types","workdir":"/workspace/talon-ui/src"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'src/a.ts(4,7): error TS2304: cannot find name\n[exit code: 2]' }] }] } } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 3, callId: 'c3', name: 'bash', arguments: '{"command":"pnpm build","description":"Build the bundle"}' } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-terminal', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-diff', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(72, 22)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // An `edit` settling from the applied hunks dsh persists as meta (path
+    // header suppressed — the head already names the file), then a `write`
+    // create, whose meta records NO hunks so the card rebuilds the change from
+    // the call arguments. Both hunks are shaped exactly as computeHunkDiffs
+    // emits them: three context lines a side, `oldText: null` for an insertion.
+    ctx.emit('session/event', agent.session, { type: 'user/message', data: { content: [{ type: 'text', text: 'Rename the flag.' }] } })
+    ctx.emit('session/event', agent.session, { type: 'turn/start', data: { turn: 1 } })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'edit', arguments: '{"file_path":"src/flags.ts","old_string":"legacy","new_string":"modern"}' } })
+    ctx.emit('session/event', agent.session, {
+      type: 'tool/result',
+      data: {
+        turn: 1, step: 1,
+        message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'edited src/flags.ts' }] }] },
+        meta: { diffs: [{ path: 'src/flags.ts', oldText: 'export const flags = {\n  legacy: true,\n}', newText: 'export const flags = {\n  modern: true,\n}' }] },
+      },
+    })
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 2, callId: 'c2', name: 'write', arguments: '{"file_path":"src/notes.md","content":"# Notes\\n\\nRenamed the flag."}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'wrote src/notes.md' }] }] }, meta: { diffs: [] } } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-diff', terminal)
+
+    await controller.dispose()
+  })
+
+  /** The card checkpoints below share one harness: a controller bound to an
+   * event-emitting ctx, driven purely by durable session events. */
+  const cardHarness = (rows: number, columns = 72) => {
+    const listeners = new Map<string, ((...a: unknown[]) => void)[]>()
+    const ctx = {
+      on: (e: string, f: (...a: unknown[]) => void) => { const l = listeners.get(e) ?? []; l.push(f); listeners.set(e, l); return () => l.splice(l.indexOf(f), 1) },
+      emit: (e: string, ...a: unknown[]) => { for (const f of listeners.get(e) ?? []) f(...a) },
+    }
+    const agent = { id: 'main', status: 'idle' as const, session: { id: 'main' }, cancel() {}, followup() {}, steer() {}, whenIdle: () => Promise.resolve(), ctx }
+    const terminal = new HeadlessTerminal(columns, rows)
+    const controller = createController({ ctx, agent, terminal, palette: createPalette(true), exit: () => {}, userQuestions: { registerProvider: () => () => {} }, commands: commandService(), ...sessionDeps })
+    const send = (type: string, data: unknown) => ctx.emit('session/event', agent.session, { type, data })
+    return { terminal, controller, send }
+  }
+
+  it('card-read', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The numbered window `read` persists as meta, highlighted through
+    // meta.lang — ANSI-16 roles only, which the checkpoint's theme gate proves.
+    send('user/message', { content: [{ type: 'text', text: 'Show me the flag.' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"src/flags.ts","offset":9}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '9\tconst flags = {' }] }] },
+      meta: {
+        path: 'src/flags.ts', offset: 9, totalLines: 120, lang: 'typescript',
+        lines: [
+          { number: 9, text: '// the feature flags' },
+          { number: 10, text: 'export const flags = {' },
+          { number: 11, text: '  modern: true,' },
+          { number: 12, text: '}' },
+        ],
+      },
+    })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-read', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-search', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // grep's by-file groups and glob's flat list, both carrying the pre-cap
+    // `total` — the grep result is capped, so its card says so.
+    send('user/message', { content: [{ type: 'text', text: 'Where is the flag used?' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'grep', arguments: '{"pattern":"modern","path":"src"}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'src/flags.ts:10:  modern: true,' }] }] },
+      meta: {
+        shape: 'matches', truncated: true, total: 42,
+        files: [
+          { path: 'src/flags.ts', matches: [{ lineNumber: 10, line: '  modern: true,' }] },
+          { path: 'src/app.ts', matches: [{ lineNumber: 3, line: 'if (flags.modern) {' }] },
+        ],
+      },
+    })
+    send('tool/call', { turn: 1, step: 2, callId: 'c2', name: 'glob', arguments: '{"pattern":"src/**/*.test.ts"}' })
+    send('tool/result', {
+      turn: 1, step: 2,
+      message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: 'src/flags.test.ts' }] }] },
+      meta: { shape: 'paths', truncated: false, total: 2, paths: ['src/flags.test.ts', 'src/app.test.ts'] },
+    })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-search', terminal)
+
+    await controller.dispose()
+  })
+
+  it('card-generic', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The web rows (a source list over dim urls) and a generic body rendered
+    // through the shared Markdown theme — heading, bullets, a highlighted
+    // fence — folded by VISIBLE rows.
+    send('user/message', { content: [{ type: 'text', text: 'What changed upstream?' }] })
+    send('turn/start', { turn: 1 })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'web_search', arguments: '{"queries":["pi-tui release notes"]}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'two results' }] }] },
+      meta: { truncated: false, sources: [
+        { url: 'https://pi-tui.example/releases/0.84.1', title: 'pi-tui 0.84.1' },
+        { url: 'https://pi-tui.example/blog', title: 'Release notes' },
+      ] },
+    })
+    send('tool/call', { turn: 1, step: 2, callId: 'c2', name: 'skill', arguments: '{"name":"writing-plans"}' })
+    send('tool/result', { turn: 1, step: 2, message: { content: [{ toolCallId: 'c2', content: [{ type: 'text', text: '# writing-plans\n\n- state the goal\n- **verify** each step' }] }] } })
+    await terminal.waitForFrame(before)
+    await checkpoint('card-generic', terminal)
+
+    await controller.dispose()
+  })
+
+  /** One coding turn — text, a tool call, more text, plus injected context —
+   * driven through the SAME events for both visibility goldens below, so the
+   * pair reads as one Ctrl+O sequence rather than two unrelated frames. */
+  const visibilityTurn = (send: (type: string, data: unknown) => void) => {
+    send('user/message', { content: [{ type: 'text', text: 'Rename the flag.' }] })
+    send('user/message', { content: [{ type: 'text', text: 'writing-plans\nexecuting-plans' }], source: { kind: 'skill-catalog', form: 'catalog' } })
+    send('turn/start', { turn: 1 })
+    send('assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Looking at the flag.' }] } })
+    send('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"src/flags.ts","offset":9}' })
+    send('tool/result', {
+      turn: 1, step: 1,
+      message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: '9\tconst flags' }] }] },
+      meta: { path: 'src/flags.ts', offset: 9, totalLines: 120, lang: 'typescript', lines: [
+        { number: 9, text: 'export const flags = {' },
+        { number: 10, text: '  modern: true,' },
+        { number: 11, text: '}' },
+      ] },
+    })
+    send('assistant/message', { turn: 1, step: 2, message: { content: [{ type: 'text', text: 'Renamed it.' }] } })
+    send('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  }
+
+  it('cards-expanded', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(22)
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    visibilityTurn(send)
+    await terminal.waitForFrame(before)
+
+    before = terminal.frames
+    terminal.input('\x0f')          // Ctrl+O once: expanded — the context body appears too
+    await terminal.waitForFrame(before)
+    await checkpoint('cards-expanded', terminal)
+
+    await controller.dispose()
+  })
+
+  it('cards-hidden', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    visibilityTurn(send)
+    await terminal.waitForFrame(before)
+
+    // Twice: expanded, then hidden — the card and the context card vanish, the
+    // two steps of the turn fold under ONE talon header, and no orphaned blank
+    // rows are left where the cards were.
+    for (const _ of [0, 1]) {
+      before = terminal.frames
+      terminal.input('\x0f')
+      await terminal.waitForFrame(before)
+    }
+    await checkpoint('cards-hidden', terminal)
+
+    await controller.dispose()
+  })
+
+  it('palette-table', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(20, 108)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // `/palette` through the DURABLE path (Ruling 5): command/run then
+    // command/done, exactly as dsh's CommandRuntime records them, with the
+    // table generated from paletteSpec so the golden cannot drift from the
+    // spec table it documents.
+    send('command/run', { name: 'palette', args: '' })
+    send('command/done', { kind: 'success', text: paletteTable(createPalette(true)) })
+    await terminal.waitForFrame(before)
+    await checkpoint('palette-table', terminal)
+
+    await controller.dispose()
+  })
+
+  it('compaction-marker', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(18)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The permanent bookmark: the shadowed exchange stays ABOVE it, exactly as
+    // it does on replay — one durable checkpoint message, one dim line.
+    send('user/message', { content: [{ type: 'text', text: 'What did we decide?' }], source: { kind: 'user' } })
+    send('assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'To rename the flag.' }] } })
+    send('compaction/start', { compactionId: 'k1', turn: 1 })
+    send('user/message', { content: [{ type: 'text', text: 'Summary of the earlier conversation.' }], source: { kind: 'plugin', plugin: 'compact', compactionId: 'k1' } })
+    send('compaction/end', { compactionId: 'k1', turn: 1 })
+    send('user/message', { content: [{ type: 'text', text: 'Ship it.' }], source: { kind: 'user' } })
+    await terminal.waitForFrame(before)
+    await checkpoint('compaction-marker', terminal)
+
+    await controller.dispose()
+  })
+
+  it('footer-metrics', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_755_100_000_000)
+    const { terminal, controller, send } = cardHarness(14, 88)
+    await terminal.waitForFrame(0)
+    const before = terminal.frames
+    // The whole template at rest: workspace, model, cache and context folded
+    // from durable events, with two messages waiting behind an idle agent.
+    // (No branch: the frozen workspace has no repository — gitBranch's own
+    // behaviour is pinned in tests/controller.spec.ts.)
+    send('user/message', { content: [{ type: 'text', text: 'Rename the flag.' }], source: { kind: 'user' } })
+    send('request/context', { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 64000 })
+    send('assistant/message', {
+      turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Renamed it.' }] },
+      usage: { inputTokens: 4200, outputTokens: 380, cacheReadTokens: 31_000, cacheWriteTokens: 400 },
+    })
+    send('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    send('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{}, {}] })
+    await terminal.waitForFrame(before)
+    await checkpoint('footer-metrics', terminal)
+
     await controller.dispose()
   })
 

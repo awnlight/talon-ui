@@ -1,6 +1,6 @@
 terminal 72x18 buffer=normal length=18 base=0 viewport=0
 lifecycle started=1 stopped=0 progress=inactive
-cursor hidden @8,0
+cursor hidden @8,2
 0| "You"
   style 0-2 bold underline
 1| "Which skills are loaded?"
@@ -13,7 +13,11 @@ cursor hidden @8,0
 6| "Use executing-plans."
 7| "────────────────────────────────────────────────────────────────────────"
   style 0-71 dim
-8| <blank>
+8| "❯"
+  style 0-0 dim
+  style 2-2 inverse
 9| "enter send · shift+enter newline · ctrl+c exit"
   style 0-45 dim
-10-17| <blank>
+10| "/workspace/talon-ui"
+  style 0-18 dim
+11-17| <blank>

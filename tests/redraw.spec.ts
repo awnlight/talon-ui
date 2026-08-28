@@ -85,7 +85,11 @@ function mount() {
   const ctx = fakeCtx()
   const agent = fakeAgent()
   agent.ctx = ctx
-  const terminal = new HeadlessTerminal(60, 14)
+  // 20 rows, not 14: the footer line (Task 15) costs the composer one more row,
+  // and the in-viewport phase of the gate below must stay in-viewport — a
+  // shrink from a SCROLLED transcript is the one unavoidable redraw, pinned by
+  // its own test rather than smuggled into this one.
+  const terminal = new HeadlessTerminal(60, 20)
   const userQuestions = fakeQuestionService()
   const commands = roundtripCommandService((event) => ctx.emit('session/event', agent.session, event))
   const controller = createController({
@@ -112,12 +116,38 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
     await terminal.waitForFrame(before)
     before = terminal.frames
     ctx.emit('session/event', agent.session, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'checks now.' } } })
-    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'Running the checks now.' }] } } })
+    ctx.emit('session/event', agent.session, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'reasoning', text: 'Checking the plan.' }, { type: 'text', text: 'Running the checks now.' }] } } })
     ctx.emit('session/event', agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
     agent.status = 'idle'
     ctx.emit('agent/status', { agent, status: 'idle' })
     await terminal.waitForFrame(before)
     expect(terminal.snapshot()).toContain('Running the checks now.')
+
+    // Phase 1b: Ctrl+R hides reasoning — a transcript SHRINK, the classic
+    // full-redraw trigger — and restores it.
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).not.toContain('Checking the plan.')
+    before = terminal.frames
+    terminal.input('\x12')
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('Checking the plan.')
+
+    // Phase 1c: Ctrl+O's full cycle over a settled tool card — hidden mode is
+    // the LARGEST shrink talon can produce (a card, its spacer and a repeated
+    // assistant header all leave at once), so it is the sharpest wipe test.
+    before = terminal.frames
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c0', name: 'skill', arguments: '{"name":"writing-plans"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'c0', content: [{ type: 'text', text: Array.from({ length: 8 }, (_, i) => `row ${i}`).join('\n') }] }] } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.snapshot()).toContain('more lines')                  // collapsed: folded
+    for (const expected of ['writing-plans', 'checks now.', 'more lines']) {
+      before = terminal.frames
+      terminal.input('\x0f')                                             // expanded → hidden → collapsed
+      await terminal.waitForFrame(before)
+      expect(terminal.snapshot(), expected).toContain(expected)
+    }
 
     // Phase 2: approval request → panel → answer '1' → audit pair.
     before = terminal.frames
@@ -174,6 +204,37 @@ describe('zero-scrollback-wipe gate (D10④)', () => {
     expect(terminal.snapshot()).toContain('earlier reply')
 
     expect(terminal.scrollbackWipes).toBe(0)
+    await controller.dispose()
+  })
+
+  /** The ONE place a transcript-wide visibility change cannot stay differential
+   * — recorded rather than papered over. When the transcript is taller than the
+   * viewport the terminal has already scrolled, so hiding cards rewrites rows
+   * that now live in SCROLLBACK. pi-tui repaints in full whenever
+   * `firstChanged < viewportTop` (tui-main-screen.js:347), and no differential
+   * write can reach scrollback anyway. The cost is pinned at exactly one
+   * redraw per shrink so a regression that wipes on every frame — or that
+   * starts wiping on plain appends — still fails this file. Ctrl+R shares the
+   * property for the same reason. */
+  it('a shrink from a SCROLLED transcript costs exactly one full redraw, and appends still cost none', async () => {
+    const { ctx, agent, terminal, controller } = mount()
+    await terminal.waitForFrame(0)
+    let before = terminal.frames
+    // Fill well past the 14-row viewport, so the terminal is scrolled.
+    ctx.emit('session/event', agent.session, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'skill', arguments: '{"name":"x"}' } })
+    ctx.emit('session/event', agent.session, { type: 'tool/result', data: { turn: 1, step: 1, message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: Array.from({ length: 20 }, (_, i) => `row ${i}`).join('\n\n') }] }] } } })
+    await terminal.waitForFrame(before)
+    expect(terminal.scrollbackWipes).toBe(0)          // growth stays differential even past the viewport
+
+    before = terminal.frames
+    terminal.input('\x0f')                            // collapsed → expanded: growth again
+    await terminal.waitForFrame(before)
+    expect(terminal.scrollbackWipes).toBe(0)
+
+    before = terminal.frames
+    terminal.input('\x0f')                            // expanded → hidden: the unavoidable one
+    await terminal.waitForFrame(before)
+    expect(terminal.scrollbackWipes).toBe(1)
     await controller.dispose()
   })
 
